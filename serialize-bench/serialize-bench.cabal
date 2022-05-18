@@ -1,0 +1,82 @@
+cabal-version:      3.6
+name:               serialize-bench
+version:            0.1.0.0
+
+-- A short (one-line) description of the package.
+-- synopsis:
+
+-- A longer description of the package.
+-- description:
+
+-- A URL where users can report bugs.
+-- bug-reports:
+
+-- The license under which the package is released.
+-- license:
+author:             brian
+maintainer:         littlebubu.shu@gmail.com
+
+-- A copyright notice.
+-- copyright:
+-- category:
+extra-source-files: CHANGELOG.md
+
+common common-options
+  default-language: GHC2021
+  default-extensions:
+    LambdaCase,
+    OverloadedStrings,
+    DuplicateRecordFields,
+    OverloadedRecordDot,
+    NoFieldSelectors,
+    DataKinds,
+    GADTs,
+    ViewPatterns,
+    PatternSynonyms,
+    TypeFamilies,
+    TypeFamilyDependencies,
+    FunctionalDependencies,
+    OverloadedLabels,
+    ImportQualifiedPost,
+    ImpredicativeTypes,
+    LexicalNegation,
+    NoStarIsType,
+    NoGeneralizedNewtypeDeriving,
+    DerivingVia,
+    PartialTypeSignatures,
+  ghc-options:
+    -Wall
+    -Wredundant-constraints
+    -Wno-name-shadowing
+    -- until OverloadedRecordUpdate stabilizes
+    -Wno-ambiguous-fields
+    -Wno-partial-type-signatures
+    -Werror=incomplete-patterns
+    -Werror=incomplete-uni-patterns
+    -Werror=missing-methods
+    -Werror=incomplete-record-updates
+    -Wcpp-undef
+    -Widentities
+  build-depends:
+    base >= 4.12 && <5,
+    serialize,
+    serialize-th,
+    criterion ^>= 1.5.13.0,
+    bytestring ^>= 0.11.0.0,
+    text ^>= 1.2.5.0 || <= 2.0,
+    containers ^>= 0.6.0.1,
+    unordered-containers ^>= 0.2.19.1,
+    vector ^>= 0.12.0.0,
+
+common rtsopts
+  ghc-options:
+    -threaded
+    -rtsopts
+    -with-rtsopts=-N
+  
+executable serialize-bench
+  import: common-options, rtsopts
+  main-is: Main.hs
+  -- Modules included in this executable, other than Main.
+  -- other-modules:
+  hs-source-dirs: src

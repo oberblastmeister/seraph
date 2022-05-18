@@ -1,0 +1,15 @@
+2021-10-24 15:37:06 [ThreadId 15] ERROR phoityne - ghci launch error. <file descriptor: 132>: hPutChar: resource vanished (Broken pipe)
+
+2021-10-24 15:37:07 [ThreadId 15] ERROR phoityne - [disconnectRequestHandler] ghci not started.
+2021-10-24 15:39:27.209747924000 [291379(ThreadId 17)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2021-10-24 15:41:10.560018027000 [304818(ThreadId 17)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2021-10-24 15:44:48.906771873000 [323755(ThreadId 17)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2021-10-24 15:46:27.110918864000 [324700(ThreadId 17)] ERROR APP - [CRITICAL] can not get the initial ghci prompt.
+2021-10-24 15:47:26.389434729000 [328512(ThreadId 17)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2021-10-24 15:48:08.524970424000 [328746(ThreadId 17)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2021-10-24 15:55:56.604403492000 [353280(ThreadId 16)] WARNING REQUEST - unsupported request command. {"command":"stepOut","arguments":{"threadId":0},"type":"request","seq":45}
+2021-10-24 15:57:30.784410105000 [353553(ThreadId 17)] ERROR APP - user error (variable id:10 not found.)
+2021-10-24 15:58:28.777100090000 [353810(ThreadId 17)] ERROR APP - user error (<getModule> loaded module can not find from path. </home/brian/projects/haskell-template/app/Main.hs> [])
+2021-10-24 15:58:28.827081062000 [353810(ThreadId 17)] ERROR APP - start debugging failed. user error (ExecResult not found.) : Left "user error (ExecResult not found.)"
+2021-10-24 16:02:01.647728917000 [359529(ThreadId 17)] ERROR APP - invalid dap result from ghci. ["unknown command ':dap-set-breakpoints'","use :? for help.","H>>= "]
+2021-10-24 16:02:01.654551699000 [359529(ThreadId 17)] CRITICAL APP - invalid dap result from ghci. ["unknown command ':dap-continue'","use :? for help.","H>>= "]

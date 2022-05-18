@@ -1,0 +1,7 @@
+packages:
+    serialize/
+    serialize-th/
+    serialize-bench/
+
+tests: True
+benchmarks: True
