@@ -21,14 +21,16 @@ maintainer:         littlebubu.shu@gmail.com
 -- category:
 extra-source-files: CHANGELOG.md
 
+flag force-alignment
+  manual: True
+  default: True
+
 common common-options
   default-language: GHC2021
   default-extensions:
     LambdaCase,
     OverloadedStrings,
     DuplicateRecordFields,
-    OverloadedRecordDot,
-    NoFieldSelectors,
     DataKinds,
     GADTs,
     ViewPatterns,
@@ -50,6 +52,7 @@ common common-options
     -Wno-name-shadowing
     -- until OverloadedRecordUpdate stabilizes
     -Wno-ambiguous-fields
+    -Wno-unticked-promoted-constructors
     -Wno-partial-type-signatures
     -Werror=incomplete-patterns
     -Werror=incomplete-uni-patterns
@@ -64,6 +67,7 @@ common common-options
     containers ^>= 0.6.0.1,
     unordered-containers ^>= 0.2.19.1,
     vector ^>= 0.12.0.0,
+    primitive ^>= 0.7.3.0 ,
 
 library
   import: common-options
@@ -71,6 +75,12 @@ library
   exposed-modules:
     Serialize
     Serialize.Internal
+    Serialize.Internal.Prim
+    Serialize.Internal.Types
+  include-dirs:
+    include,
+  if flag(force-alignment) || arch(PPC) || arch(PPC64) || arch(Mips) || arch(Sparc) || arch(Arm)
+    cpp-options: -DALIGNED_MEMORY
 
 common rtsopts
   ghc-options:
