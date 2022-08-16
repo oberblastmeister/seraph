@@ -2,8 +2,8 @@
 instance Serialize (ty) where { \
     unsafeSize# _ = sizeOf# (undefined :: (ty)); \
     {-# INLINE unsafeSize# #-}; \
-    unsafeConstSize# _ = (# | sizeOf# (undefined :: (ty)) #); \
-    {-# INLINE unsafeConstSize# #-}; \
+    unsafeConstSize = ConstSize (sizeOf (undefined :: (ty))); \
+    {-# INLINE unsafeConstSize #-}; \
     poke = pokeName; \
     {-# INLINE poke #-}; \
     peek = peekName; \

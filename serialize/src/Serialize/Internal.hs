@@ -9,10 +9,15 @@
 module Serialize.Internal where
 
 import Control.Exception qualified as Exception
-import Control.Monad ((<$!>))
+import Control.Monad (foldM, (<$!>))
+import Control.Monad.ST (runST)
+import Data.Bits (Bits, unsafeShiftL, unsafeShiftR, (.|.))
+import Data.Data (Data)
 import Data.Int
 import Data.Kind (Type)
-import Data.Primitive (Prim, sizeOf#)
+import Data.List (unfoldr)
+import Data.Primitive (Prim, sizeOf, sizeOf#)
+import Data.Primitive.PrimArray
 import Data.Word
 import GHC.Exts
 import GHC.Generics (Generic)
@@ -23,9 +28,23 @@ import Serialize.Internal.Types
 
 #include "serialize.h"
 
+data ConstSize = ConstSize !Int | VarSize
+
+instance Semigroup ConstSize where
+  VarSize <> _ = VarSize
+  _ <> VarSize = VarSize
+  ConstSize i <> ConstSize j = ConstSize $ i + j
+  {-# INLINE (<>) #-}
+
+instance Monoid ConstSize where
+  mempty = VarSize
+  {-# INLINE mempty #-}
+  mappend = (<>)
+  {-# INLINE mappend #-}
+
 class Serialize a where
   unsafeSize# :: a -> Int#
-  unsafeConstSize# :: Proxy# a -> (# (# #)| Int# #)
+  unsafeConstSize :: ConstSize
   poke :: a -> Poke ()
   peek :: Peek a
 
@@ -160,11 +179,11 @@ type family FitsInByteResult b where
   FitsInByteResult False = TypeError (Text "Generic deriving of Serialize instances can only be used on datatypes with fewer than 256 constructors.")
 
 newtype BigEndian a = BigEndian {unBE :: a}
-  deriving (Functor, Foldable, Traversable)
+  deriving (Data, Functor, Foldable, Traversable)
   deriving (Show, Read, Eq, Ord, Generic, Prim, Num, Bounded) via a
 
 newtype LittleEndian a = LittleEndian {unLE :: a}
-  deriving (Functor, Foldable, Traversable)
+  deriving (Data, Functor, Foldable, Traversable)
   deriving (Show, Read, Eq, Ord, Generic, Prim, Num, Bounded) via a
 
 #ifdef WORDS_BIGENDIAN
@@ -173,11 +192,42 @@ type HostEndian = BigEndian
 type HostEndian = LittleEndian
 #endif
 
+data SList a = SList
+  { sList :: [a],
+    sSize :: !Int
+  }
+  deriving (Show, Eq, Ord, Generic, Functor, Foldable, Traversable, Data)
+
 instance Serialize () where
   unsafeSize# _ = 0#
-  unsafeConstSize# _ = (# | 0# #)
+  {-# INLINE unsafeSize# #-}
+  unsafeConstSize = ConstSize 0
+  {-# INLINE unsafeConstSize #-}
   poke _ = pure ()
+  {-# INLINE poke #-}
   peek = pure ()
+  {-# INLINE peek #-}
+
+instance Serialize a => Serialize [a] where
+  unsafeSize# xs = case unsafeConstSize @a of
+    ConstSize sz -> unI# $ (length xs) * sz
+    _ -> unI# $ sum (unsafeSize <$> xs)
+  {-# INLINE unsafeSize# #-}
+  unsafeConstSize = VarSize
+  {-# INLINE unsafeConstSize #-}
+  poke xs = pokeFoldableWith (length xs) xs
+  {-# INLINE poke #-}
+  peek = do
+    size :: Int <- fromIntegral <$> peek @Word64
+    xs <- foldM (\xs _ -> do x <- peek; pure $ x : xs) [] [1 .. size]
+    pure $! reverse xs
+  {-# INLINE peek #-}
+
+pokeFoldableWith :: (Serialize a, Foldable f) => Int -> f a -> Poke ()
+pokeFoldableWith size xs = do
+  poke (fromIntegral size :: Word64)
+  mapM_ poke xs
+{-# INLINE pokeFoldableWith #-}
 
 deriveSerializePrimWith (Word8, poke8, peek8)
 
@@ -185,9 +235,11 @@ deriveSerializePrimWith (Word16, pokeLE, peekLE)
 deriveSerializePrimWith (LittleEndian Word16, poke16LE . coerce, coerce peek16LE)
 deriveSerializePrimWith (BigEndian Word16, poke16BE . coerce, coerce peek16BE)
 
+deriveSerializePrimWith (Word32, pokeLE, peekLE)
 deriveSerializePrimWith (LittleEndian Word32, poke32LE . coerce, coerce peek32LE)
 deriveSerializePrimWith (BigEndian Word32, poke32BE . coerce, coerce peek32BE)
 
+deriveSerializePrimWith (Word64, pokeLE, peekLE)
 deriveSerializePrimWith (LittleEndian Word64, poke64LE . coerce, coerce peek64LE)
 deriveSerializePrimWith (BigEndian Word64, poke64BE . coerce, coerce peek64BE)
 
@@ -220,3 +272,28 @@ peekLE = coerce @(Peek (LittleEndian a)) peek
 peekBE :: forall a. Serialize (BigEndian a) => Peek a
 peekBE = coerce @(Peek (BigEndian a)) peek
 {-# INLINE peekBE #-}
+
+unsafeReinterpretCast :: forall a b. (Prim a, Prim b) => a -> b
+unsafeReinterpretCast x = runST $ do
+  marr <- newPrimArray @_ @a 1
+  writePrimArray marr 0 x
+  let marr' = coerce @_ @(MutablePrimArray _ b) marr
+  readPrimArray marr' 0
+{-# INLINE unsafeReinterpretCast #-}
+
+unroll :: (Integral a, Bits a) => a -> [Word8]
+unroll = unfoldr step
+  where
+    step 0 = Nothing
+    step i = Just (fromIntegral i, i `unsafeShiftR` 8)
+{-# INLINE unroll #-}
+
+roll :: (Integral a, Bits a) => [Word8] -> a
+roll = foldr unstep 0
+  where
+    unstep a b = fromIntegral a .|. b `unsafeShiftL` 8
+{-# INLINE roll #-}
+
+unI# :: Int -> Int#
+unI# (I# i#) = i#
+{-# INLINE unI# #-}
