@@ -61,12 +61,12 @@ common common-options
     base >= 4.12 && <5,
     serialize,
     serialize-th,
-    criterion ^>= 1.5.13.0,
-    bytestring ^>= 0.11.0.0,
-    text ^>= 1.2.5.0 || <= 2.0,
-    containers ^>= 0.6.0.1,
-    unordered-containers ^>= 0.2.19.1,
-    vector ^>= 0.12.0.0,
+    gauge,
+    bytestring,
+    text,
+    containers,
+    unordered-containers,
+    vector,
 
 common rtsopts
   ghc-options:

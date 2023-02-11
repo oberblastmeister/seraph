@@ -1,14 +1,14 @@
-#define deriveSerializePrimWith(ty, pokeName, peekName) \
+#define deriveSerializePrimWith(ty, putName, getName) \
 instance Serialize (ty) where { \
-    unsafeSize# _ = sizeOf# (undefined :: (ty)); \
-    {-# INLINE unsafeSize# #-}; \
-    unsafeConstSize = ConstSize (sizeOf (undefined :: (ty))); \
-    {-# INLINE unsafeConstSize #-}; \
-    poke = pokeName; \
-    {-# INLINE poke #-}; \
-    peek = peekName; \
-    {-# INLINE peek #-}; \
+    size# _ = sizeOf# (undefined :: (ty)); \
+    {-# INLINE size# #-}; \
+    constSize# _ = ConstSize# (sizeOf# (undefined :: (ty))); \
+    {-# INLINE constSize# #-}; \
+    put = putName; \
+    {-# INLINE put #-}; \
+    get = getName; \
+    {-# INLINE get #-}; \
 }
 
 #define deriveSerializePrim(ty) \
-deriveSerializePrimWith(ty, pokePrim, peekPrim)
+deriveSerializePrimWith(ty, putPrim, getPrim)

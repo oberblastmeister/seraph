@@ -7,285 +7,289 @@
 {-# LANGUAGE UnliftedNewtypes #-}
 
 module Serialize.Internal.Types
-  ( Poke (..),
-    Peek (..),
-    PokeException (..),
-    PeekException (..),
-    pokeStateAddr#,
-    setPokeStateAddr#,
-#ifdef ALIGNED_MEMORY
-    pokeStateAlignAddr#,
-    alignBufferSize,
-    peekStateAlignAddr#,
-#endif
-    unsafeWithPokeState#,
-    pokeStatePtr#,
-    putPokeState#,
-    unsafeLiftPoke#,
-    unsafeLiftIOPoke,
-    unsafeLiftPoke'#,
-    peekStateAddr#,
-    setPeekStateAddr#,
-    unsafeLiftIOPeek,
-    unsafeLiftPeek# ,
-    unsafeLiftPeek'#,
-    throwTooManyBytes,
-    getPeekState#,
-    setPeekState#,
-    getEnd#,
-    getEnd,
-    ensurePeek,
-    ensurePrim
+  (
   )
 where
 
+--     Poke (..),
+--     Peek (..),
+--     PokeException (..),
+--     PeekException (..),
+--     pokeStateAddr#,
+--     setPokeStateAddr#,
+-- #ifdef ALIGNED_MEMORY
+--     pokeStateAlignAddr#,
+--     alignBufferSize,
+--     peekStateAlignAddr#,
+-- #endif
+--     unsafeWithPokeState#,
+--     pokeStatePtr#,
+--     putPokeState#,
+--     unsafeLiftPoke#,
+--     unsafeLiftIOPoke,
+--     unsafeLiftPoke'#,
+--     peekStateAddr#,
+--     setPeekStateAddr#,
+--     unsafeLiftIOPeek,
+--     unsafeLiftPeek# ,
+--     unsafeLiftPeek'#,
+--     throwTooManyBytes,
+--     getPeekState#,
+--     setPeekState#,
+--     getEnd#,
+--     getEnd,
+--     ensurePeek,
+--     ensurePrim
+
 import Control.Exception (Exception)
 import Control.Exception qualified as Exception
+import Control.Monad (join, when)
 import Data.ByteString (ByteString)
 import Data.ByteString.Internal qualified as ByteString.Internal
+import Data.Primitive (Prim)
+import Data.Primitive qualified as Primitive
 import Data.Typeable (Typeable)
 import Data.Word (Word8)
+import Foreign qualified
 import GHC.Exts
 import GHC.IO (IO (..))
-import Control.Monad (join, when)
-import qualified Foreign
-import Data.Primitive (Prim)
-import qualified Data.Primitive as Primitive
 
 type S# = State# RealWorld
 
-newtype Poke a where
+newtype Put where
   Poke ::
     { runPoke# ::
         PokeState# ->
         State# RealWorld ->
-        (# State# RealWorld, PokeState#, a #)
+        (# State# RealWorld, PokeState# #)
     } ->
-    Poke a
+    Put
 
-#ifdef ALIGNED_MEMORY
-newtype PokeState# = PokeState# (# Addr#, Addr# #)
+newtype PokeState# = PokeState# (# ByteArray# #)
 
-pokeStateAddr# :: PokeState# -> Addr#
-pokeStateAddr# (PokeState# (# addr#, _ #)) = addr#
-{-# INLINE pokeStateAddr# #-}
+-- #ifdef ALIGNED_MEMORY
+-- newtype PokeState# = PokeState# (# Addr#, Addr# #)
 
-setPokeStateAddr# :: Addr# -> PokeState# -> PokeState#
-setPokeStateAddr# addr# (PokeState# (# _, alignAddr# #)) = PokeState# (# addr#, alignAddr# #)
-{-# INLINE setPokeStateAddr# #-}
+-- pokeStateAddr# :: PokeState# -> Addr#
+-- pokeStateAddr# (PokeState# (# addr#, _ #)) = addr#
+-- {-# INLINE pokeStateAddr# #-}
 
-pokeStateAlignAddr# :: PokeState# -> Addr#
-pokeStateAlignAddr# (PokeState# (# _, alignAddr# #)) = alignAddr#
-{-# INLINE pokeStateAlignAddr# #-}
+-- setPokeStateAddr# :: Addr# -> PokeState# -> PokeState#
+-- setPokeStateAddr# addr# (PokeState# (# _, alignAddr# #)) = PokeState# (# addr#, alignAddr# #)
+-- {-# INLINE setPokeStateAddr# #-}
 
-unsafeWithPokeState# :: Int -> (PokeState# -> IO ()) -> ByteString
-unsafeWithPokeState# l f = ByteString.Internal.unsafeCreate l $ \(Ptr addr#) ->
-  Foreign.allocaBytesAligned alignBufferSize 8 $ \(Ptr alignAddr#) ->
-    f (PokeState# (# addr#, alignAddr# #))
-{-# INLINE unsafeWithPokeState# #-}
+-- pokeStateAlignAddr# :: PokeState# -> Addr#
+-- pokeStateAlignAddr# (PokeState# (# _, alignAddr# #)) = alignAddr#
+-- {-# INLINE pokeStateAlignAddr# #-}
 
-alignBufferSize :: Int
-alignBufferSize = 32
-#else
-newtype PokeState# = PokeState# (# Addr# #)
+-- unsafeWithPokeState# :: Int -> (PokeState# -> IO ()) -> ByteString
+-- unsafeWithPokeState# l f = ByteString.Internal.unsafeCreate l $ \(Ptr addr#) ->
+--   Foreign.allocaBytesAligned alignBufferSize 8 $ \(Ptr alignAddr#) ->
+--     f (PokeState# (# addr#, alignAddr# #))
+-- {-# INLINE unsafeWithPokeState# #-}
 
-pokeStateAddr# :: PokeState# -> Addr#
-pokeStateAddr# (PokeState# (# addr# #)) = addr#
-{-# INLINE pokeStateAddr# #-}
+-- alignBufferSize :: Int
+-- alignBufferSize = 32
+-- #else
+-- newtype PokeState# = PokeState# (# ByteArray# #)
 
-setPokeStateAddr# :: Addr# -> PokeState# -> PokeState#
-setPokeStateAddr# addr# _ = PokeState# (# addr# #)
-{-# INLINE setPokeStateAddr# #-}
+-- pokeStateAddr# :: PokeState# -> Addr#
+-- pokeStateAddr# (PokeState# (# addr# #)) = addr#
+-- {-# INLINE pokeStateAddr# #-}
 
-unsafeWithPokeState# :: Int -> (PokeState# -> IO ()) -> ByteString
-unsafeWithPokeState# l f = ByteString.Internal.unsafeCreate l $ \(Ptr addr#) ->
-  f (PokeState# (# addr# #))
-{-# INLINE unsafeWithPokeState# #-}
-#endif
+-- setPokeStateAddr# :: Addr# -> PokeState# -> PokeState#
+-- setPokeStateAddr# addr# _ = PokeState# (# addr# #)
+-- {-# INLINE setPokeStateAddr# #-}
 
-pokeStatePtr# :: PokeState# -> Ptr Word8
-pokeStatePtr# ps# = Ptr (pokeStateAddr# ps#)
-{-# INLINE pokeStatePtr# #-}
+-- unsafeWithPokeState# :: Int -> (PokeState# -> IO ()) -> ByteString
+-- unsafeWithPokeState# l f = ByteString.Internal.unsafeCreate l $ \(Ptr addr#) ->
+--   f (PokeState# (# addr# #))
+-- {-# INLINE unsafeWithPokeState# #-}
+-- #endif
 
-putPokeState# :: PokeState# -> Poke ()
-putPokeState# ps# = Poke $ \_ps# s# -> (# s#, ps#, () #)
-{-# INLINE putPokeState# #-}
+-- pokeStatePtr# :: PokeState# -> Ptr Word8
+-- pokeStatePtr# ps# = Ptr (pokeStateAddr# ps#)
+-- {-# INLINE pokeStatePtr# #-}
 
-instance Functor Poke where
-  fmap f m = Poke $ \ps# s# ->
-    case runPoke# m ps# s# of
-      (# s'#, ps'#, x #) -> (# s'#, ps'#, f x #)
-  {-# INLINE fmap #-}
+-- putPokeState# :: PokeState# -> Poke ()
+-- putPokeState# ps# = Poke $ \_ps# s# -> (# s#, ps#, () #)
+-- {-# INLINE putPokeState# #-}
 
-instance Applicative Poke where
-  pure x = Poke $ \ps s# -> (# s#, ps, x #)
-  {-# INLINE pure #-}
+-- instance Functor Poke where
+--   fmap f m = Poke $ \ps# s# ->
+--     case runPoke# m ps# s# of
+--       (# s'#, ps'#, x #) -> (# s'#, ps'#, f x #)
+--   {-# INLINE fmap #-}
 
-  Poke mf <*> Poke mx = Poke $ \ps# s# -> case mf ps# s# of
-    (# s'#, ps'#, f #) -> case mx ps'# s'# of
-      (# s''#, ps''#, x #) -> (# s''#, ps''#, f x #)
-  {-# INLINE (<*>) #-}
+-- instance Applicative Poke where
+--   pure x = Poke $ \ps s# -> (# s#, ps, x #)
+--   {-# INLINE pure #-}
 
-instance Monad Poke where
-  return = pure
-  {-# INLINE return #-}
+--   Poke mf <*> Poke mx = Poke $ \ps# s# -> case mf ps# s# of
+--     (# s'#, ps'#, f #) -> case mx ps'# s'# of
+--       (# s''#, ps''#, x #) -> (# s''#, ps''#, f x #)
+--   {-# INLINE (<*>) #-}
 
-  Poke mx >>= fm = Poke $ \ps# s# -> case mx ps# s# of
-    (# s'#, ps'#, x #) -> runPoke# (fm x) ps'# s'#
-  {-# INLINE (>>=) #-}
+-- instance Monad Poke where
+--   return = pure
+--   {-# INLINE return #-}
 
-unsafeLiftIOPoke :: IO a -> Poke a
-unsafeLiftIOPoke (IO f) = unsafeLiftPoke# f
-{-# INLINE unsafeLiftIOPoke #-}
+--   Poke mx >>= fm = Poke $ \ps# s# -> case mx ps# s# of
+--     (# s'#, ps'#, x #) -> runPoke# (fm x) ps'# s'#
+--   {-# INLINE (>>=) #-}
 
-unsafeLiftPoke# :: (S# -> (# S#, a #)) -> Poke a
-unsafeLiftPoke# f = Poke $ \ps# s# -> case f s# of
-  (# s'#, x #) -> (# s'#, ps#, x #)
-{-# INLINE unsafeLiftPoke# #-}
+-- unsafeLiftIOPoke :: IO a -> Poke a
+-- unsafeLiftIOPoke (IO f) = unsafeLiftPoke# f
+-- {-# INLINE unsafeLiftIOPoke #-}
 
-unsafeLiftPoke'# :: (S# -> S#) -> Poke ()
-unsafeLiftPoke'# f = Poke $ \ps# s# -> case f s# of
-   s'# -> (# s'#, ps#, () #)
-{-# INLINE unsafeLiftPoke'# #-}
+-- unsafeLiftPoke# :: (S# -> (# S#, a #)) -> Poke a
+-- unsafeLiftPoke# f = Poke $ \ps# s# -> case f s# of
+--   (# s'#, x #) -> (# s'#, ps#, x #)
+-- {-# INLINE unsafeLiftPoke# #-}
 
-#ifdef ALIGNED_MEMORY
-newtype PeekState# = PeekState# (# Addr#, Addr# #)
+-- unsafeLiftPoke'# :: (S# -> S#) -> Poke ()
+-- unsafeLiftPoke'# f = Poke $ \ps# s# -> case f s# of
+--    s'# -> (# s'#, ps#, () #)
+-- {-# INLINE unsafeLiftPoke'# #-}
 
-peekStateAddr# :: PeekState# -> Addr#
-peekStateAddr# (PeekState# (# addr#, _ #)) = addr#
-{-# INLINE peekStateAddr# #-}
+-- #ifdef ALIGNED_MEMORY
+-- newtype PeekState# = PeekState# (# Addr#, Addr# #)
 
-peekStateAlignAddr# :: PeekState# -> Addr#
-peekStateAlignAddr# (PeekState# (# _, alignAddr# #)) = alignAddr#
-{-# INLINE peekStateAlignAddr# #-}
+-- peekStateAddr# :: PeekState# -> Addr#
+-- peekStateAddr# (PeekState# (# addr#, _ #)) = addr#
+-- {-# INLINE peekStateAddr# #-}
 
-setPeekStateAddr# :: Addr# -> PeekState# -> PeekState#
-setPeekStateAddr# addr# (PeekState# (# _ , alignAddr# #)) = PeekState# (# addr#, alignAddr# #)
-{-# INLINE setPeekStateAddr# #-}
-#else
-newtype PeekState# = PeekState# (# Addr# #)
+-- peekStateAlignAddr# :: PeekState# -> Addr#
+-- peekStateAlignAddr# (PeekState# (# _, alignAddr# #)) = alignAddr#
+-- {-# INLINE peekStateAlignAddr# #-}
 
-peekStateAddr# :: PeekState# -> Addr#
-peekStateAddr# (PeekState# (# addr# #)) = addr#
-{-# INLINE peekStateAddr# #-}
+-- setPeekStateAddr# :: Addr# -> PeekState# -> PeekState#
+-- setPeekStateAddr# addr# (PeekState# (# _ , alignAddr# #)) = PeekState# (# addr#, alignAddr# #)
+-- {-# INLINE setPeekStateAddr# #-}
+-- #else
+-- newtype PeekState# = PeekState# (# Addr# #)
 
-setPeekStateAddr# :: Addr# -> PeekState# -> PeekState#
-setPeekStateAddr# addr# (PeekState# (# _ #)) = PeekState# (# addr# #)
-{-# INLINE setPeekStateAddr# #-}
-#endif
+-- peekStateAddr# :: PeekState# -> Addr#
+-- peekStateAddr# (PeekState# (# addr# #)) = addr#
+-- {-# INLINE peekStateAddr# #-}
 
-newtype Peek a = Peek
-  { runPeek# ::
-      Addr# ->
-      PeekState# ->
-      State# RealWorld ->
-      (# State# RealWorld, PeekState#, a #)
-  }
+-- setPeekStateAddr# :: Addr# -> PeekState# -> PeekState#
+-- setPeekStateAddr# addr# (PeekState# (# _ #)) = PeekState# (# addr# #)
+-- {-# INLINE setPeekStateAddr# #-}
+-- #endif
 
-instance Functor Peek where
-  fmap f m = Peek $ \end# ps# s# -> case runPeek# m end# ps# s# of
-    (# s'#, ps'#, x #) -> (# s'#, ps'#, f x #)
-  {-# INLINE fmap #-}
+-- newtype Peek a = Peek
+--   { runPeek# ::
+--       Addr# ->
+--       PeekState# ->
+--       State# RealWorld ->
+--       (# State# RealWorld, PeekState#, a #)
+--   }
 
-instance Applicative Peek where
-  pure x = Peek $ \_end# ps# s# -> (# s#, ps#, x #)
-  {-# INLINE pure #-}
+-- instance Functor Peek where
+--   fmap f m = Peek $ \end# ps# s# -> case runPeek# m end# ps# s# of
+--     (# s'#, ps'#, x #) -> (# s'#, ps'#, f x #)
+--   {-# INLINE fmap #-}
 
-  Peek mf <*> Peek mx = Peek $ \end# ps# s# -> case mf end# ps# s# of
-    (# s'#, ps'#, f #) -> case mx end# ps'# s'# of
-      (# s''#, ps''#, x #) -> (# s''#, ps''#, f x #)
-  {-# INLINE (<*>) #-}
+-- instance Applicative Peek where
+--   pure x = Peek $ \_end# ps# s# -> (# s#, ps#, x #)
+--   {-# INLINE pure #-}
 
-instance Monad Peek where
-  return = pure
-  {-# INLINE return #-}
+--   Peek mf <*> Peek mx = Peek $ \end# ps# s# -> case mf end# ps# s# of
+--     (# s'#, ps'#, f #) -> case mx end# ps'# s'# of
+--       (# s''#, ps''#, x #) -> (# s''#, ps''#, f x #)
+--   {-# INLINE (<*>) #-}
 
-  Peek mx >>= fm = Peek $ \end# ps# s# -> case mx end# ps# s# of
-    (# s'#, ps'#, x #) -> runPeek# (fm x) end# ps'# s'#
-  {-# INLINE (>>=) #-}
+-- instance Monad Peek where
+--   return = pure
+--   {-# INLINE return #-}
 
-unsafeLiftIOPeek :: IO a -> Peek a
-unsafeLiftIOPeek (IO f) = unsafeLiftPeek# f
-{-# INLINE unsafeLiftIOPeek #-}
+--   Peek mx >>= fm = Peek $ \end# ps# s# -> case mx end# ps# s# of
+--     (# s'#, ps'#, x #) -> runPeek# (fm x) end# ps'# s'#
+--   {-# INLINE (>>=) #-}
 
-unsafeLiftPeek# :: (S# -> (# S#, a #)) -> Peek a
-unsafeLiftPeek# f = Peek $ \_end# ps# s# -> case f s# of
-  (# s'#, x #) -> (# s'#, ps#, x #)
-{-# INLINE unsafeLiftPeek# #-}
+-- unsafeLiftIOPeek :: IO a -> Peek a
+-- unsafeLiftIOPeek (IO f) = unsafeLiftPeek# f
+-- {-# INLINE unsafeLiftIOPeek #-}
 
-unsafeLiftPeek'# :: (S# -> S#) -> Peek ()
-unsafeLiftPeek'# f = unsafeLiftPeek# (\s# -> case f s# of
-  s'# -> (# s'#, () #))
-{-# INLINE unsafeLiftPeek'# #-}
+-- unsafeLiftPeek# :: (S# -> (# S#, a #)) -> Peek a
+-- unsafeLiftPeek# f = Peek $ \_end# ps# s# -> case f s# of
+--   (# s'#, x #) -> (# s'#, ps#, x #)
+-- {-# INLINE unsafeLiftPeek# #-}
 
-getPeekState# :: (PeekState# -> Peek a) -> Peek a
-getPeekState# f = join $ Peek $ \_end# ps# s# -> (# s#, ps#, f ps# #)
-{-# INLINE getPeekState# #-}
+-- unsafeLiftPeek'# :: (S# -> S#) -> Peek ()
+-- unsafeLiftPeek'# f = unsafeLiftPeek# (\s# -> case f s# of
+--   s'# -> (# s'#, () #))
+-- {-# INLINE unsafeLiftPeek'# #-}
 
-setPeekState# :: PeekState# -> Peek ()
-setPeekState# ps# = Peek $ \_end# _ps# s# -> (# s#, ps#, () #)
-{-# INLINE setPeekState# #-}
+-- getPeekState# :: (PeekState# -> Peek a) -> Peek a
+-- getPeekState# f = join $ Peek $ \_end# ps# s# -> (# s#, ps#, f ps# #)
+-- {-# INLINE getPeekState# #-}
 
-getEnd# :: (Addr# -> Peek a) -> Peek a
-getEnd# f = join $ Peek $ \end# ps# s# -> (# s#, ps#, f end# #)
-{-# INLINE getEnd# #-}
+-- setPeekState# :: PeekState# -> Peek ()
+-- setPeekState# ps# = Peek $ \_end# _ps# s# -> (# s#, ps#, () #)
+-- {-# INLINE setPeekState# #-}
 
-getEnd :: Peek (Ptr Word8)
-getEnd = Peek $ \end# ps# s# -> (# s#, ps#, Ptr end# #)
-{-# INLINE getEnd #-}
+-- getEnd# :: (Addr# -> Peek a) -> Peek a
+-- getEnd# f = join $ Peek $ \end# ps# s# -> (# s#, ps#, f end# #)
+-- {-# INLINE getEnd# #-}
 
-ensurePeek :: Int -> Peek ()
-ensurePeek sz = do
-  end <- getEnd
-  getPeekState# $ \ps# -> do
-    let ptr = Ptr (peekStateAddr# ps#)
-        remaining = end `Foreign.minusPtr` ptr
-    unsafeLiftIOPeek $ when (sz > remaining) $ throwTooManyBytes sz remaining "some type" 
-{-# INLINE ensurePeek #-}
+-- getEnd :: Peek (Ptr Word8)
+-- getEnd = Peek $ \end# ps# s# -> (# s#, ps#, Ptr end# #)
+-- {-# INLINE getEnd #-}
 
-ensurePrim :: forall a. Prim a => Proxy# a -> Peek ()
-ensurePrim _  = ensurePeek (Primitive.sizeOf (undefined :: a))
-{-# INLINE ensurePrim #-}
+-- ensurePeek :: Int -> Peek ()
+-- ensurePeek sz = do
+--   end <- getEnd
+--   getPeekState# $ \ps# -> do
+--     let ptr = Ptr (peekStateAddr# ps#)
+--         remaining = end `Foreign.minusPtr` ptr
+--     unsafeLiftIOPeek $ when (sz > remaining) $ throwTooManyBytes sz remaining "some type"
+-- {-# INLINE ensurePeek #-}
 
-data PokeException = PokeException
-  { pokeExByteIndex :: !Int,
-    pokeExMessage :: String
-  }
-  deriving (Eq, Show, Typeable)
+-- ensurePrim :: forall a. Prim a => Proxy# a -> Peek ()
+-- ensurePrim _  = ensurePeek (Primitive.sizeOf (undefined :: a))
+-- {-# INLINE ensurePrim #-}
 
-instance Exception PokeException where
-  displayException (PokeException offset msg) =
-    "Exception while poking, at byte index "
-      ++ show offset
-      ++ " : "
-      ++ msg
+-- data PokeException = PokeException
+--   { pokeExByteIndex :: !Int,
+--     pokeExMessage :: String
+--   }
+--   deriving (Eq, Show, Typeable)
 
--- | Exception thrown while running 'peek'. Note that other types of
--- exceptions can also be thrown. Invocations of 'fail' in the 'Poke'
--- monad causes this exception to be thrown.
---
--- 'PeekException' is thrown when the data being decoded is invalid.
-data PeekException = PeekException
-    { peekExBytesFromEnd :: !Int
-    , peekExMessage :: String
-    } deriving (Eq, Show, Typeable)
+-- instance Exception PokeException where
+--   displayException (PokeException offset msg) =
+--     "Exception while poking, at byte index "
+--       ++ show offset
+--       ++ " : "
+--       ++ msg
 
-instance Exception PeekException where
-    displayException (PeekException offset msg) =
-        "Exception while peeking, " ++
-        show offset ++
-        " bytes from end: " ++
-        msg
+-- -- | Exception thrown while running 'peek'. Note that other types of
+-- -- exceptions can also be thrown. Invocations of 'fail' in the 'Poke'
+-- -- monad causes this exception to be thrown.
+-- --
+-- -- 'PeekException' is thrown when the data being decoded is invalid.
+-- data PeekException = PeekException
+--     { peekExBytesFromEnd :: !Int
+--     , peekExMessage :: String
+--     } deriving (Eq, Show, Typeable)
 
--- | Throws a 'PeekException' about an attempt to read too many bytes.
-throwTooManyBytes :: Int -> Int -> String -> IO void
-throwTooManyBytes needed remaining ty =
-  Exception.throwIO $
-    PeekException remaining $
-      "Attempted to read too many bytes for "
-        ++ ty
-        ++ ". Needed "
-        ++ show needed
-        ++ ", but only "
-        ++ show remaining
-        ++ " remain."
+-- instance Exception PeekException where
+--     displayException (PeekException offset msg) =
+--         "Exception while peeking, " ++
+--         show offset ++
+--         " bytes from end: " ++
+--         msg
+
+-- -- | Throws a 'PeekException' about an attempt to read too many bytes.
+-- throwTooManyBytes :: Int -> Int -> String -> IO void
+-- throwTooManyBytes needed remaining ty =
+--   Exception.throwIO $
+--     PeekException remaining $
+--       "Attempted to read too many bytes for "
+--         ++ ty
+--         ++ ". Needed "
+--         ++ show needed
+--         ++ ", but only "
+--         ++ show remaining
+--         ++ " remain."

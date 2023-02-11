@@ -46,6 +46,11 @@ common common-options
     NoGeneralizedNewtypeDeriving,
     DerivingVia,
     PartialTypeSignatures,
+    MagicHash,
+    UnliftedNewtypes,
+    UnboxedTuples,
+    UnboxedSums,
+    BlockArguments,
   ghc-options:
     -Wall
     -Wredundant-constraints
@@ -62,25 +67,27 @@ common common-options
     -Widentities
   build-depends:
     base >= 4.12 && <5,
-    bytestring ^>= 0.11.0.0,
-    text ^>= 1.2.5.0 || <= 2.0,
-    containers ^>= 0.6.0.1,
-    unordered-containers ^>= 0.2.19.1,
-    vector ^>= 0.12.0.0,
-    primitive ^>= 0.7.3.0 ,
+    bytestring,
+    text >= 2.0,
+    containers,
+    unordered-containers,
+    vector,
+    primitive,
+    primitive-unaligned,
 
 library
   import: common-options
   hs-source-dirs: src
   exposed-modules:
     Serialize
-    Serialize.Internal
-    Serialize.Internal.Prim
-    Serialize.Internal.Types
+      Serialize.Internal
+        Serialize.Internal.Get
+        Serialize.Internal.Put
+        Serialize.Internal.Util
+        Serialize.Internal.Prim
+        Serialize.Internal.Types
   include-dirs:
     include,
-  if flag(force-alignment) || arch(PPC) || arch(PPC64) || arch(Mips) || arch(Sparc) || arch(Arm)
-    cpp-options: -DALIGNED_MEMORY
 
 common rtsopts
   ghc-options:
