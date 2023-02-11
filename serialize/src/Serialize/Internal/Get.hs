@@ -1,7 +1,7 @@
 module Serialize.Internal.Get where
 
 import Data.Kind (Type)
-import GHC.Exts (Int#, (+#))
+import GHC.Exts
 import Serialize.Internal.Util
 
 newtype Get :: Type -> Type where

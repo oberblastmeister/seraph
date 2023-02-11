@@ -7,13 +7,21 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnliftedNewtypes #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
+{-# OPTIONS_GHC -ddump-simpl
+-ddump-to-file
+-dsuppress-module-prefixes
+-dsuppress-coercions
+-dsuppress-idinfo -O2 #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Redundant bracket" #-}
 
 module Serialize.Internal where
 
-import Data.Data (Data)
+import Control.Monad (foldM)
 import Data.Int
 import Data.Kind (Type)
 import Data.Primitive (Prim, sizeOf#)
+import Data.Primitive.ByteArray.Unaligned
 import Data.Word
 import GHC.Exts
 import GHC.Generics (Generic)
@@ -23,6 +31,7 @@ import Serialize.Internal.Get
 import Serialize.Internal.Prim
 import Serialize.Internal.Put
 import Serialize.Internal.Util
+import System.ByteOrder
 
 #include "serialize.h"
 
@@ -34,6 +43,8 @@ pattern ConstSize# i# = (# i# | #)
 pattern VarSize# :: ConstSize#
 pattern VarSize# = (# | (# #) #)
 
+{-# COMPLETE ConstSize#, VarSize# #-}
+
 (<>#) :: ConstSize# -> ConstSize# -> ConstSize#
 ConstSize# i# <># ConstSize# j# = ConstSize# (i# +# j#)
 _ <># _ = VarSize#
@@ -44,48 +55,28 @@ constSizeAdd# i# (ConstSize# j#) = ConstSize# (i# +# j#)
 constSizeAdd# _ VarSize# = VarSize#
 {-# INLINE constSizeAdd# #-}
 
-{-# COMPLETE ConstSize#, VarSize# #-}
-
--- instance Semigroup ConstSize where
---   VarSize <> _ = VarSize
---   _ <> VarSize = VarSize
---   ConstSize i <> ConstSize j = ConstSize $ i + j
---   {-# INLINE (<>) #-}
-
--- instance Monoid ConstSize where
---   mempty = VarSize
---   {-# INLINE mempty #-}
---   mappend = (<>)
---   {-# INLINE mappend #-}
-
 class Serialize a where
   size# :: a -> Int#
   default size# :: (Generic a, GSerializeSize (G.Rep a)) => a -> Int#
   size# x = gSize# (G.from x)
   {-# INLINE size# #-}
+
   constSize# :: Proxy# a -> ConstSize#
   constSize# _ = VarSize#
+  {-# INLINE constSize# #-}
+
   put :: a -> Put
+
   get :: Get a
+
+constSize## :: forall a. Serialize a => ConstSize#
+constSize## = constSize# (proxy# @a)
+{-# INLINE constSize## #-}
 
 unsafeSize :: Serialize a => a -> Int
 unsafeSize x = I# (size# x)
 {-# INLINE unsafeSize #-}
 
--- checkOffset :: Int -> Int -> IO ()
--- checkOffset o l
---   | o < 0 = Exception.throwIO $ PutException o $ "encode offset was negative"
---   | o > l = Exception.throwIO $ PutException o $ "encode overshot end of " ++ show l ++ " byte long buffer"
---   | o < l = Exception.throwIO $ PutException o $ "encode undershot end of " ++ show l ++ " byte long buffer"
---   | otherwise = pure ()
--- {-# INLINE checkOffset #-}
-
--- | Exception thrown while running 'poke'. Note that other types of
--- exceptions could also be thrown. Invocations of 'fail' in the 'Put'
--- monad causes this exception to be thrown.
---
--- 'PutException's are not expected to occur in ordinary circumstances,
--- unsafeand usually indicate a programming error.
 class GSerializeSize f where
   gSize# :: f a -> Int#
 
@@ -217,90 +208,59 @@ type family FitsInByteResult b where
   FitsInByteResult True = ()
   FitsInByteResult False = TypeError (Text "Generic deriving of Serialize instances can only be used on datatypes with fewer than 256 constructors.")
 
-newtype BigEndian a = BigEndian {unBE :: a}
-  deriving (Data, Functor, Foldable, Traversable)
-  deriving (Show, Read, Eq, Ord, Generic, Prim, Num, Bounded) via a
+instance FixedOrdering b => Serialize (Fixed b Int) where
+  size# _ = sizeOf## @Int
+  constSize# _ = ConstSize# (sizeOf## @Int)
+  put = put . fromIntegral @(Fixed b Int) @(Fixed b Int64)
+  get = fromIntegral @(Fixed b Int64) @(Fixed b Int) <$> get
+  {-# INLINE size# #-}
+  {-# INLINE constSize# #-}
+  {-# INLINE put #-}
+  {-# INLINE get #-}
 
-newtype LittleEndian a = LittleEndian {unLE :: a}
-  deriving (Data, Functor, Foldable, Traversable)
-  deriving (Show, Read, Eq, Ord, Generic, Prim, Num, Bounded) via a
+instance FixedOrdering b => Serialize (Fixed b Word) where
+  size# _ = sizeOf## @Word
+  constSize# _ = ConstSize# (sizeOf## @Word)
+  put = put . fromIntegral @(Fixed b Word) @(Fixed b Word64)
+  get = fromIntegral @(Fixed b Word64) @(Fixed b Word) <$> get
+  {-# INLINE size# #-}
+  {-# INLINE constSize# #-}
+  {-# INLINE put #-}
+  {-# INLINE get #-}
 
-#ifdef WORDS_BIGENDIAN
-type HostEndian = BigEndian
-#else
-type HostEndian = LittleEndian
-#endif
+deriveSerializePrim (Word8)
+deriveSerializePrim (Word16)
+deriveSerializePrim (Word32)
+deriveSerializePrim (Word64)
+deriveSerializePrimLE (Word)
 
-data SList a = SList
-  { sList :: [a],
-    sSize :: !Int
-  }
-  deriving (Show, Eq, Ord, Generic, Functor, Foldable, Traversable, Data)
+deriveSerializePrim (Int8)
+deriveSerializePrim (Int16)
+deriveSerializePrim (Int32)
+deriveSerializePrim (Int64)
+deriveSerializePrimLE (Int)
 
-deriveSerializePrim(Word8)
-deriveSerializePrim(Word16)
-deriveSerializePrim(Word32)
-deriveSerializePrim(Word64)
-deriveSerializePrim(Word)
+instance Serialize a => Serialize [a] where
+  size# xs = case constSize## @a of
+    ConstSize# sz# -> unI# (length xs) *# sz#
+    _ -> unI# $ sum $ unsafeSize <$> xs
 
-deriveSerializePrim(Int8)
-deriveSerializePrim(Int16)
-deriveSerializePrim(Int32)
-deriveSerializePrim(Int64)
-deriveSerializePrim(Int)
+  constSize# _ = VarSize#
+  {-# INLINE constSize# #-}
 
-deriveSerializePrim(Float)
-deriveSerializePrim(Double)
-deriveSerializePrim(Char)
-deriveSerializePrim(Ptr a)
--- instance Serialize a => Serialize [a] where
---   unsafeSize# xs = case unsafeConstSize @a of
---     ConstSize sz -> unI# $ (length xs) * sz
---     _ -> unI# $ sum (unsafeSize <$> xs)
---   {-# INLINE unsafeSize# #-}
---   unsafeConstSize = VarSize
---   {-# INLINE unsafeConstSize #-}
---   put xs = putFoldableWith (length xs) xs
---   {-# INLINE put #-}
---   get = do
---     size :: Int <- fromIntegral <$> get @Word64
---     xs <- foldM (\xs _ -> do x <- get; pure $ x : xs) [] [1 .. size]
---     pure $! reverse xs
---   {-# INLINE get #-}
+  put xs = putFoldableWith (length xs) xs
 
--- putFoldableWith :: (Serialize a, Foldable f) => Int -> f a -> Put ()
--- putFoldableWith size xs = do
---   put (fromIntegral size :: Word64)
---   mapM_ put xs
--- {-# INLINE putFoldableWith #-}
+  get = do
+    size :: Int <- fromIntegral <$> get @Word64
+    xs <- foldM (\xs _ -> do x <- get; pure $ x : xs) [] [1 .. size]
+    pure $! reverse xs
 
--- deriveSerializePrimWith (Word8, put8, get8)
+putFoldableWith :: (Serialize a, Foldable f) => Int -> f a -> Put
+putFoldableWith !size xs = put (fromIntegral size :: Word64) <> foldMap put xs
+{-# INLINE putFoldableWith #-}
 
--- deriveSerializePrimWith (Word16, putLE, getLE)
--- deriveSerializePrimWith (LittleEndian Word16, put16LE . coerce, coerce get16LE)
--- deriveSerializePrimWith (BigEndian Word16, put16BE . coerce, coerce get16BE)
-
--- deriveSerializePrimWith (Word32, putLE, getLE)
--- deriveSerializePrimWith (LittleEndian Word32, put32LE . coerce, coerce get32LE)
--- deriveSerializePrimWith (BigEndian Word32, put32BE . coerce, coerce get32BE)
-
--- deriveSerializePrimWith (Word64, putLE, getLE)
--- deriveSerializePrimWith (LittleEndian Word64, put64LE . coerce, coerce get64LE)
--- deriveSerializePrimWith (BigEndian Word64, put64BE . coerce, coerce get64BE)
-
--- deriveSerializePrimWith (LittleEndian Int16, put . fmap (fromIntegral @_ @Word16), fmap (fromIntegral @Word16) <$!> get)
--- deriveSerializePrimWith (BigEndian Int16, put . fmap (fromIntegral @_ @Word16), fmap (fromIntegral @Word16) <$!> get)
-
--- deriveSerializePrimWith (LittleEndian Int32, put . fmap (fromIntegral @_ @Word32), fmap (fromIntegral @Word32) <$!> get)
--- deriveSerializePrimWith (BigEndian Int32, put . fmap (fromIntegral @_ @Word32), fmap (fromIntegral @Word32) <$!> get)
-
--- deriveSerializePrimWith (LittleEndian Int64, put . fmap (fromIntegral @_ @Word64), fmap (fromIntegral @Word64) <$!> get)
--- deriveSerializePrimWith (BigEndian Int64, put . fmap (fromIntegral @_ @Word64), fmap (fromIntegral @Word64) <$!> get)
-
--- deriveSerializePrimWith (LittleEndian Int, put . fmap (fromIntegral @_ @Word64), fmap (fromIntegral @Word64) <$!> get)
--- deriveSerializePrimWith (BigEndian Int, put . fmap (fromIntegral @_ @Word64), fmap (fromIntegral @Word64) <$!> get)
-
--- deriveSerializePrimWith (Int, putLE, getLE)
+bruh :: [Word64] -> Put
+bruh = put
 
 -- putLE :: Serialize (LittleEndian a) => a -> Put ()
 -- putLE = put . LittleEndian

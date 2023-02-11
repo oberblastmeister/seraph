@@ -74,6 +74,7 @@ common common-options
     vector,
     primitive,
     primitive-unaligned,
+    byte-order,
 
 library
   import: common-options
