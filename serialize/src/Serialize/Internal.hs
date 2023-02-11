@@ -2,11 +2,6 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# OPTIONS_GHC -ddump-simpl
--ddump-to-file
--dsuppress-module-prefixes
--dsuppress-coercions
--dsuppress-idinfo -O2 #-}
 
 {-# HLINT ignore "Redundant bracket" #-}
 
@@ -16,7 +11,6 @@ import Control.Exception qualified as Exception
 import Control.Monad (foldM, (<$!>))
 import Control.Monad.ST (runST)
 import Data.ByteString (ByteString)
-import Data.ByteString.Short qualified as SBS
 import Data.Int (Int16, Int32, Int64, Int8)
 import Data.Monoid (Dual (..), Product (..), Sum (..))
 import Data.Primitive (MutablePrimArray, Prim, sizeOf#)
@@ -59,22 +53,26 @@ constSizeAdd# _ VarSize# = VarSize#
 
 class Serialize a where
   size# :: a -> Int#
+  constSize# :: Proxy# a -> ConstSize#
+  put :: a -> Put
+  get :: Get a
+
   default size# :: (Generic a, GSerializeSize (G.Rep a)) => a -> Int#
   size# x = gSize# (G.from x)
   {-# INLINE size# #-}
 
-  constSize# :: Proxy# a -> ConstSize#
-  default constSize# :: (GSerializeConstSize (G.Rep a)) => Proxy# a -> ConstSize#
-  constSize# _ = gConstSize# (proxy# @((G.Rep a) _))
+  constSize# _ = VarSize#
   {-# INLINE constSize# #-}
 
-  put :: a -> Put
   default put :: (Generic a, GSerializePut (G.Rep a)) => a -> Put
   put = gPut . G.from
 
-  get :: Get a
   default get :: (Generic a, GSerializeGet (G.Rep a)) => Get a
   get = G.to <$!> gGet
+
+gConstSize :: forall a. GSerializeConstSize (G.Rep a) => Proxy# a -> ConstSize#
+gConstSize _ = gConstSize# (proxy# @((G.Rep a) _))
+{-# INLINE gConstSize #-}
 
 constSize## :: forall a. Serialize a => ConstSize#
 constSize## = constSize# (proxy# @a)
@@ -308,12 +306,6 @@ putFoldableWith :: (Serialize a, Foldable f) => Int -> f a -> Put
 putFoldableWith !size xs = put (fromIntegral size :: Word64) <> foldMap put xs
 {-# INLINE putFoldableWith #-}
 
-bruh :: Either Word64 Word16 -> Put
-bruh = put
-
-bruhGet :: Get (Either Word64 Word16)
-bruhGet = get
-
 unsafeReinterpretCast :: forall a b. (Prim a, Prim b) => a -> b
 unsafeReinterpretCast x = runST $ do
   marr <- Primitive.newPrimArray @_ @a 1
@@ -337,9 +329,7 @@ encode x = runST $ do
   marr@(Primitive.MutableByteArray marr#) <- Primitive.newPinnedByteArray sz
   ST \s# -> case runPut# (put x) (Env# marr# (unI# sz)) (PS# 0#) s# of
     (# s#, _ #) -> (# s#, () #)
-  Primitive.ByteArray arr# <- Primitive.unsafeFreezeByteArray marr
-  -- pinned ByteArray# is coerced to ByteString O(1)
-  pure $ SBS.fromShort $ SBS.SBS arr#
+  pinnedToByteString <$!> Primitive.unsafeFreezeByteArray marr
   where
     sz = size x
 

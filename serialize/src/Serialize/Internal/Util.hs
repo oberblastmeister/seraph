@@ -6,22 +6,23 @@ module Serialize.Internal.Util
     unW#,
     (<!$!>),
     unpackByteString#,
+    pinnedToByteString,
   )
 where
 
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.ByteString.Internal qualified as B.Internal
-import Data.Primitive
-import Foreign (withForeignPtr)
+import Data.Primitive (Prim)
+import Data.Primitive qualified as Primitive
 import Foreign qualified
-import GHC.Exts (mutableByteArrayContents#)
 import GHC.ForeignPtr (ForeignPtr (..), ForeignPtrContents (PlainPtr))
 import Serialize.Internal.Exts
 import System.IO.Unsafe (unsafeDupablePerformIO)
+import Unsafe.Coerce qualified
 
 sizeOf## :: forall a. Prim a => Int#
-sizeOf## = sizeOf# (undefined :: a)
+sizeOf## = Primitive.sizeOf# (undefined :: a)
 {-# INLINE sizeOf## #-}
 
 unI# :: Int -> Int#
@@ -38,22 +39,30 @@ f <!$!> m = do
   pure $! f x
 {-# INLINE (<!$!>) #-}
 
-unpackByteString# :: ByteString -> (# ByteArray#, Int#, Int# #)
-unpackByteString# bs@(B.Internal.PS fp@(ForeignPtr _ fpc) o l) =
-  let res = unsafeDupablePerformIO $ withForeignPtr fp $ \p -> case fpc of
-        PlainPtr marr -> do
-          let base = Ptr (mutableByteArrayContents# marr)
-              off = p `Foreign.minusPtr` base
-          arr <- unsafeFreezeByteArray $ MutableByteArray marr
-          pure (arr, off + o, off + o + l)
-        _ -> case B.copy bs of
-          B.Internal.PS fp@(ForeignPtr _ fpc) o l -> withForeignPtr fp $ \p -> case fpc of
-            PlainPtr marr -> do
-              let base = Ptr (mutableByteArrayContents# marr)
-                  off = p `Foreign.minusPtr` base
-              arr <- unsafeFreezeByteArray $ MutableByteArray marr
-              pure (arr, off + o, off + o + l)
-            _ -> error "should be PlainPtr"
-   in case res of
-        (ByteArray arr, I# off, I# len) -> (# arr, off, len #)
-{-# INLINE unpackByteString# #-}
+unpackByteString# :: ByteString -> (# Primitive.ByteArray#, Int#, Int# #)
+unpackByteString# bs@(B.Internal.PS (ForeignPtr (Primitive.Ptr -> p) fpc) o l) =
+  (# arr#, off#, len# #)
+  where
+    !(Primitive.ByteArray arr#, I# off#, I# len#) = unsafeDupablePerformIO $ case fpc of
+      PlainPtr (Primitive.MutableByteArray -> marr) -> do
+        let base = Primitive.mutableByteArrayContents marr
+            off = p `Foreign.minusPtr` base
+        arr <- Primitive.unsafeFreezeByteArray marr
+        pure (arr, off + o, off + o + l)
+      _ -> case B.copy bs of
+        B.Internal.PS (ForeignPtr (Primitive.Ptr -> p) fpc) o l -> case fpc of
+          PlainPtr (Primitive.MutableByteArray -> marr) -> do
+            let base = Primitive.mutableByteArrayContents marr
+                off = p `Foreign.minusPtr` base
+            arr <- Primitive.unsafeFreezeByteArray marr
+            pure (arr, off + o, off + o + l)
+          _ -> error "should be PlainPtr"
+
+pinnedToByteString :: Primitive.ByteArray -> ByteString
+pinnedToByteString bs@(Primitive.ByteArray b#)
+  | Primitive.isByteArrayPinned bs = B.Internal.PS fp 0 len
+  | otherwise = error "ByteArray must be pinned"
+  where
+    !(Primitive.Ptr addr#) = Primitive.byteArrayContents bs
+    fp = ForeignPtr addr# (PlainPtr (Unsafe.Coerce.unsafeCoerce# b#))
+    len = Primitive.sizeofByteArray bs
