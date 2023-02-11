@@ -12,8 +12,11 @@
 
 module Serialize.Internal where
 
+import Control.Exception qualified as Exception
 import Control.Monad (foldM, (<$!>))
 import Control.Monad.ST (runST)
+import Data.ByteString (ByteString)
+import Data.ByteString.Short qualified as SBS
 import Data.Int
 import Data.Monoid (Dual (..), First (..), Last (..), Product (..), Sum (..))
 import Data.Primitive (MutablePrimArray, Prim, sizeOf#)
@@ -23,15 +26,14 @@ import Data.Tree (Tree)
 import Data.Word
 import GHC.Generics (Generic)
 import GHC.Generics qualified as G
+import GHC.ST (ST (..))
 import GHC.TypeLits
 import Serialize.Internal.Exts
 import Serialize.Internal.Get
 import Serialize.Internal.Put
 import Serialize.Internal.Util
 import System.ByteOrder qualified as ByteOrder
-import Data.ByteString (ByteString)
-import GHC.ST (ST(..))
-import qualified Data.ByteString.Short as SBS
+import System.IO.Unsafe qualified as IO.Unsafe
 
 #include "serialize.h"
 
@@ -223,7 +225,7 @@ instance (GSerializePut f, KnownNat n) => GSerializePutSum n (G.C1 c f) where
 instance (GSerializeGet f, KnownNat n) => GSerializeGetSum n (G.C1 c f) where
   gGetSum# tag _
     | W# tag == cur = gGet
-    | W# tag > cur = error "Sum tag invalid"
+    | W# tag > cur = Exception.throw (InvalidSumTag cur (W# tag))
     | otherwise = error "Implementation error"
     where
       cur = fromInteger @Word (natVal' (proxy# @n))
@@ -340,8 +342,11 @@ encode x = runST $ do
   where
     sz = size x
 
-decode :: Serialize a => ByteString -> a
-decode bs = case runGet# get (BS# arr# l#) (GS# i#) of
+decode' :: Serialize a => ByteString -> a
+decode' bs = case runGet# get (BS# arr# l#) (GS# i#) of
   GR# _ x -> x
   where
     !(# arr#, i#, l# #) = unpackByteString# bs
+
+decode :: Serialize a => ByteString -> Either GetException a
+decode = IO.Unsafe.unsafeDupablePerformIO . Exception.try . Exception.evaluate . decode'
