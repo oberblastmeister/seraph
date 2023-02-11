@@ -18,9 +18,10 @@
 
 module Serialize.Internal where
 
-import Control.Monad (foldM)
+import Control.Monad (foldM, (<$!>))
 import Control.Monad.ST (runST)
 import Data.Int
+import Data.Monoid (Dual (..), First (..), Last (..), Product (..), Sum (..))
 import Data.Primitive (MutablePrimArray, Prim, sizeOf#)
 import Data.Primitive qualified as Primitive
 import Data.Primitive.ByteArray.Unaligned
@@ -33,6 +34,7 @@ import Serialize.Internal.Get
 import Serialize.Internal.Put
 import Serialize.Internal.Util
 import System.ByteOrder qualified as ByteOrder
+import Data.Tree (Tree)
 
 #include "serialize.h"
 
@@ -67,8 +69,12 @@ class Serialize a where
   {-# INLINE constSize# #-}
 
   put :: a -> Put
+  default put :: (Generic a, GSerializePut (G.Rep a)) => a -> Put
+  put = gPut . G.from
 
   get :: Get a
+  default get :: (Generic a, GSerializeGet (G.Rep a)) => Get a
+  get = G.to <$!> gGet
 
 constSize## :: forall a. Serialize a => ConstSize#
 constSize## = constSize# (proxy# @a)
@@ -166,6 +172,16 @@ instance (FitsInByte (SumArity (f G.:+: g)), GSerializeSizeSum 0 (f G.:+: g)) =>
   gSize# x = sizeOf## @Word8 +# gSizeSum# x (proxy# @0)
   {-# INLINE gSize# #-}
 
+instance (FitsInByte (SumArity (f G.:+: g)), GSerializePutSum 0 (f G.:+: g)) => GSerializePut (f G.:+: g) where
+  gPut x = gPutSum x (proxy# @0)
+  {-# INLINE gPut #-}
+
+instance (FitsInByte (SumArity (f G.:+: g)), GSerializeGetSum 0 (f G.:+: g)) => GSerializeGet (f G.:+: g) where
+  gGet = do
+    tag <- get
+    gGetSum# tag (proxy# @0)
+  {-# INLINE gGet #-}
+
 instance GSerializeConstSize (f G.:+: g) where
   gConstSize# _ = VarSize#
   {-# INLINE gConstSize# #-}
@@ -174,10 +190,10 @@ class KnownNat n => GSerializeSizeSum n f where
   gSizeSum# :: f a -> Proxy# n -> Int#
 
 class KnownNat n => GSerializePutSum n f where
-  gputSum# :: f a -> Proxy# n -> Put
+  gPutSum :: f a -> Proxy# n -> Put
 
 class KnownNat n => GSerializeGetSum n f where
-  ggetSum# :: Word8 -> Proxy# n -> Get (f a)
+  gGetSum# :: Word8 -> Proxy# n -> Get (f a)
 
 instance (GSerializeSizeSum n f, GSerializeSizeSum (n + SumArity f) g, KnownNat n) => GSerializeSizeSum n (f G.:+: g) where
   gSizeSum# (G.L1 l) _ = gSizeSum# l (proxy# @n)
@@ -185,17 +201,34 @@ instance (GSerializeSizeSum n f, GSerializeSizeSum (n + SumArity f) g, KnownNat 
   {-# INLINE gSizeSum# #-}
 
 instance (GSerializePutSum n f, GSerializePutSum (n + SumArity f) g, KnownNat n) => GSerializePutSum n (f G.:+: g) where
-  gputSum# (G.L1 l) _ = gputSum# l (proxy# @n)
-  gputSum# (G.R1 r) _ = gputSum# r (proxy# @(n + SumArity f))
+  gPutSum (G.L1 l) _ = gPutSum l (proxy# @n)
+  gPutSum (G.R1 r) _ = gPutSum r (proxy# @(n + SumArity f))
+  {-# INLINE gPutSum #-}
+
+instance (GSerializeGetSum n f, GSerializeGetSum (n + SumArity f) g, KnownNat n) => GSerializeGetSum n (f G.:+: g) where
+  gGetSum# tag p#
+    | tag < sizeL = G.L1 <$!> gGetSum# tag p#
+    | otherwise = G.R1 <$!> gGetSum# tag (proxy# @(n + SumArity f))
+    where
+      sizeL = fromInteger (natVal' (proxy# @(n + SumArity f)))
+  {-# INLINE gGetSum# #-}
 
 instance (GSerializeSize f, KnownNat n) => GSerializeSizeSum n (G.C1 c f) where
   gSizeSum# x _ = gSize# x
   {-# INLINE gSizeSum# #-}
 
 instance (GSerializePut f, KnownNat n) => GSerializePutSum n (G.C1 c f) where
-  gputSum# x _ = put tag <> gPut x
+  gPutSum x _ = put tag <> gPut x
     where
       tag = fromInteger @Word8 (natVal' (proxy# @n))
+
+instance (GSerializeGet f, KnownNat n) => GSerializeGetSum n (G.C1 c f) where
+  gGetSum# tag _
+    | tag == cur = gGet
+    | tag > cur = error "Sum tag invalid"
+    | otherwise = error "Implementation error"
+    where
+      cur = fromInteger @Word8 (natVal' (proxy# @n))
 
 type SumArity :: (Type -> Type) -> Nat
 type family SumArity a where
@@ -241,6 +274,18 @@ deriveSerializePrim (Int32)
 deriveSerializePrim (Int64)
 deriveSerializePrimLE (Int)
 
+deriveSerializeNewtype (Dual)
+deriveSerializeNewtype (Sum)
+deriveSerializeNewtype (Product)
+
+instance Serialize Ordering
+instance Serialize a => Serialize (Tree a)
+instance (Serialize a, Serialize b) => Serialize (a, b)
+instance (Serialize a, Serialize b, Serialize c) => Serialize (a, b, c)
+instance (Serialize a, Serialize b, Serialize c, Serialize d) => Serialize (a, b, c, d)
+instance Serialize a => Serialize (Maybe a)
+instance (Serialize a, Serialize b) => Serialize (Either a b)
+
 instance Serialize a => Serialize [a] where
   size# xs = case constSize## @a of
     ConstSize# sz# -> unI# (length xs) *# sz#
@@ -260,7 +305,7 @@ putFoldableWith :: (Serialize a, Foldable f) => Int -> f a -> Put
 putFoldableWith !size xs = put (fromIntegral size :: Word64) <> foldMap put xs
 {-# INLINE putFoldableWith #-}
 
-bruh :: [Word64] -> Put
+bruh :: Either Word64 Word16 -> Put
 bruh = put
 
 bruhGet :: Get [Word64]
@@ -283,26 +328,3 @@ getPrim :: forall a. (Prim a, PrimUnaligned a) => Get a
 getPrim = Get# \bs# gs@(GS# i#) -> case indexBS# i# bs# of
   x -> GR# (incGS# (sizeOf## @a) gs) x
 {-# INLINE getPrim #-}
-
--- unroll :: (Integral a, Bits a) => a -> [Word8]
--- unroll = unfoldr step
---   where
---     step 0 = Nothing
---     step i = Just (fromIntegral i, i `unsafeShiftR` 8)
--- {-# INLINE unroll #-}
-
--- roll :: (Integral a, Bits a) => [Word8] -> a
--- roll = foldr unstep 0
---   where
---     unstep a b = fromIntegral a .|. b `unsafeShiftL` 8
--- {-# INLINE roll #-}
-
--- unI# :: Int -> Int#
--- unI# (I# i#) = i#
--- {-# INLINE unI# #-}
-
--- data SList a = SList
---   { sList :: [a],
---     sSize :: !Int
---   }
---   deriving (Show, Eq, Ord, Generic, Functor, Foldable, Traversable, Data)

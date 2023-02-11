@@ -28,3 +28,15 @@ deriveSerializePrimWith(ty, coerce (put @(ByteOrder.Fixed ByteOrder.LittleEndian
 #define deriveSerializePrim(ty) \
 deriveSerializePrimLE(ty); \
 deriveSerializeFixed(ty)
+
+#define deriveSerializeNewtype(ty) \
+instance Serialize a => Serialize (ty a) where { \
+    size# = coerce (size# @a); \
+    constSize# _ = constSize# (proxy# @a); \
+    put = coerce (put @a); \
+    get = coerce (get @a); \
+    {-# INLINE size# #-}; \
+    {-# INLINE constSize# #-}; \
+    {-# INLINE put #-}; \
+    {-# INLINE get #-}; \
+}
