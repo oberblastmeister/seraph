@@ -1,13 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DefaultSignatures #-}
-{-# LANGUAGE MagicHash #-}
-{-# LANGUAGE UnboxedSums #-}
-{-# LANGUAGE UnboxedTuples #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE UnliftedNewtypes #-}
-{-# OPTIONS_GHC -Wno-redundant-constraints #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# OPTIONS_GHC -ddump-simpl
 -ddump-to-file
 -dsuppress-module-prefixes
@@ -25,6 +19,7 @@ import Data.Monoid (Dual (..), First (..), Last (..), Product (..), Sum (..))
 import Data.Primitive (MutablePrimArray, Prim, sizeOf#)
 import Data.Primitive qualified as Primitive
 import Data.Primitive.ByteArray.Unaligned
+import Data.Tree (Tree)
 import Data.Word
 import GHC.Generics (Generic)
 import GHC.Generics qualified as G
@@ -34,7 +29,6 @@ import Serialize.Internal.Get
 import Serialize.Internal.Put
 import Serialize.Internal.Util
 import System.ByteOrder qualified as ByteOrder
-import Data.Tree (Tree)
 
 #include "serialize.h"
 
@@ -65,7 +59,8 @@ class Serialize a where
   {-# INLINE size# #-}
 
   constSize# :: Proxy# a -> ConstSize#
-  constSize# _ = VarSize#
+  default constSize# :: (GSerializeConstSize (G.Rep a)) => Proxy# a -> ConstSize#
+  constSize# _ = gConstSize# (proxy# @((G.Rep a) _))
   {-# INLINE constSize# #-}
 
   put :: a -> Put
@@ -195,17 +190,17 @@ class KnownNat n => GSerializePutSum n f where
 class KnownNat n => GSerializeGetSum n f where
   gGetSum# :: Word8 -> Proxy# n -> Get (f a)
 
-instance (GSerializeSizeSum n f, GSerializeSizeSum (n + SumArity f) g, KnownNat n) => GSerializeSizeSum n (f G.:+: g) where
+instance (GSerializeSizeSum n f, GSerializeSizeSum (n + SumArity f) g) => GSerializeSizeSum n (f G.:+: g) where
   gSizeSum# (G.L1 l) _ = gSizeSum# l (proxy# @n)
   gSizeSum# (G.R1 r) _ = gSizeSum# r (proxy# @(n + SumArity f))
   {-# INLINE gSizeSum# #-}
 
-instance (GSerializePutSum n f, GSerializePutSum (n + SumArity f) g, KnownNat n) => GSerializePutSum n (f G.:+: g) where
+instance (GSerializePutSum n f, GSerializePutSum (n + SumArity f) g) => GSerializePutSum n (f G.:+: g) where
   gPutSum (G.L1 l) _ = gPutSum l (proxy# @n)
   gPutSum (G.R1 r) _ = gPutSum r (proxy# @(n + SumArity f))
   {-# INLINE gPutSum #-}
 
-instance (GSerializeGetSum n f, GSerializeGetSum (n + SumArity f) g, KnownNat n) => GSerializeGetSum n (f G.:+: g) where
+instance (GSerializeGetSum n f, GSerializeGetSum (n + SumArity f) g) => GSerializeGetSum n (f G.:+: g) where
   gGetSum# tag p#
     | tag < sizeL = G.L1 <$!> gGetSum# tag p#
     | otherwise = G.R1 <$!> gGetSum# tag (proxy# @(n + SumArity f))
@@ -279,20 +274,23 @@ deriveSerializeNewtype (Sum)
 deriveSerializeNewtype (Product)
 
 instance Serialize Ordering
+
 instance Serialize a => Serialize (Tree a)
+
 instance (Serialize a, Serialize b) => Serialize (a, b)
+
 instance (Serialize a, Serialize b, Serialize c) => Serialize (a, b, c)
+
 instance (Serialize a, Serialize b, Serialize c, Serialize d) => Serialize (a, b, c, d)
+
 instance Serialize a => Serialize (Maybe a)
+
 instance (Serialize a, Serialize b) => Serialize (Either a b)
 
 instance Serialize a => Serialize [a] where
   size# xs = case constSize## @a of
     ConstSize# sz# -> unI# (length xs) *# sz#
     _ -> unI# $ sum $ unsafeSize <$> xs
-
-  constSize# _ = VarSize#
-  {-# INLINE constSize# #-}
 
   put xs = putFoldableWith (length xs) xs
 
