@@ -7,31 +7,32 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UnliftedNewtypes #-}
 {-# OPTIONS_GHC -Wno-redundant-constraints #-}
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# OPTIONS_GHC -ddump-simpl
 -ddump-to-file
 -dsuppress-module-prefixes
 -dsuppress-coercions
 -dsuppress-idinfo -O2 #-}
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
 {-# HLINT ignore "Redundant bracket" #-}
 
 module Serialize.Internal where
 
 import Control.Monad (foldM)
+import Control.Monad.ST (runST)
 import Data.Int
-import Data.Kind (Type)
-import Data.Primitive (Prim, sizeOf#)
+import Data.Primitive (MutablePrimArray, Prim, sizeOf#)
+import Data.Primitive qualified as Primitive
 import Data.Primitive.ByteArray.Unaligned
 import Data.Word
-import GHC.Exts
 import GHC.Generics (Generic)
 import GHC.Generics qualified as G
 import GHC.TypeLits
+import Serialize.Internal.Exts
 import Serialize.Internal.Get
-import Serialize.Internal.Prim
 import Serialize.Internal.Put
 import Serialize.Internal.Util
-import System.ByteOrder
+import System.ByteOrder qualified as ByteOrder
 
 #include "serialize.h"
 
@@ -84,10 +85,10 @@ class GSerializeConstSize f where
   gConstSize# :: Proxy# (f a) -> ConstSize#
 
 class GSerializePut f where
-  gput :: f a -> Put
+  gPut :: f a -> Put
 
 class GSerializeGet f where
-  gget :: Get (f a)
+  gGet :: Get (f a)
 
 instance GSerializeSize f => GSerializeSize (G.M1 i c f) where
   gSize# (G.M1 x) = gSize# x
@@ -98,12 +99,12 @@ instance GSerializeConstSize f => GSerializeConstSize (G.M1 i c f) where
   {-# INLINE gConstSize# #-}
 
 instance GSerializePut f => GSerializePut (G.M1 i c f) where
-  gput (G.M1 x) = gput x
-  {-# INLINE gput #-}
+  gPut (G.M1 x) = gPut x
+  {-# INLINE gPut #-}
 
 instance GSerializeGet f => GSerializeGet (G.M1 i c f) where
-  gget = fmap G.M1 gget
-  {-# INLINE gget #-}
+  gGet = fmap G.M1 gGet
+  {-# INLINE gGet #-}
 
 instance Serialize f => GSerializeSize (G.K1 i f) where
   gSize# (G.K1 x) = size# x
@@ -114,12 +115,12 @@ instance Serialize f => GSerializeConstSize (G.K1 i f) where
   {-# INLINE gConstSize# #-}
 
 instance Serialize f => GSerializePut (G.K1 i f) where
-  gput (G.K1 x) = put x
-  {-# INLINE gput #-}
+  gPut (G.K1 x) = put x
+  {-# INLINE gPut #-}
 
 instance Serialize f => GSerializeGet (G.K1 i f) where
-  gget = fmap G.K1 get
-  {-# INLINE gget #-}
+  gGet = fmap G.K1 get
+  {-# INLINE gGet #-}
 
 instance GSerializeSize G.U1 where
   gSize# G.U1 = 0#
@@ -130,20 +131,20 @@ instance GSerializeConstSize G.U1 where
   {-# INLINE gConstSize# #-}
 
 instance GSerializePut G.U1 where
-  gput _ = mempty
-  {-# INLINE gput #-}
+  gPut _ = mempty
+  {-# INLINE gPut #-}
 
 instance GSerializeGet G.U1 where
-  gget = pure G.U1
-  {-# INLINE gget #-}
+  gGet = pure G.U1
+  {-# INLINE gGet #-}
 
 instance GSerializeSize G.V1 where
   gSize# = \case {}
   {-# INLINE gSize# #-}
 
 instance GSerializePut G.V1 where
-  gput = \case {}
-  {-# INLINE gput #-}
+  gPut = \case {}
+  {-# INLINE gPut #-}
 
 instance (GSerializeSize f, GSerializeSize g) => GSerializeSize (f G.:*: g) where
   gSize# (x G.:*: y) = gSize# x +# gSize# y
@@ -154,12 +155,12 @@ instance (GSerializeConstSize f, GSerializeConstSize g) => GSerializeConstSize (
   {-# INLINE gConstSize# #-}
 
 instance (GSerializePut f, GSerializePut g) => GSerializePut (f G.:*: g) where
-  gput (x G.:*: y) = gput x <> gput y
-  {-# INLINE gput #-}
+  gPut (x G.:*: y) = gPut x <> gPut y
+  {-# INLINE gPut #-}
 
 instance (GSerializeGet f, GSerializeGet g) => GSerializeGet (f G.:*: g) where
-  gget = (G.:*:) <$> gget <*> gget
-  {-# INLINE gget #-}
+  gGet = (G.:*:) <$> gGet <*> gGet
+  {-# INLINE gGet #-}
 
 instance (FitsInByte (SumArity (f G.:+: g)), GSerializeSizeSum 0 (f G.:+: g)) => GSerializeSize (f G.:+: g) where
   gSize# x = sizeOf## @Word8 +# gSizeSum# x (proxy# @0)
@@ -192,7 +193,7 @@ instance (GSerializeSize f, KnownNat n) => GSerializeSizeSum n (G.C1 c f) where
   {-# INLINE gSizeSum# #-}
 
 instance (GSerializePut f, KnownNat n) => GSerializePutSum n (G.C1 c f) where
-  gputSum# x _ = put tag <> gput x
+  gputSum# x _ = put tag <> gPut x
     where
       tag = fromInteger @Word8 (natVal' (proxy# @n))
 
@@ -208,21 +209,21 @@ type family FitsInByteResult b where
   FitsInByteResult True = ()
   FitsInByteResult False = TypeError (Text "Generic deriving of Serialize instances can only be used on datatypes with fewer than 256 constructors.")
 
-instance FixedOrdering b => Serialize (Fixed b Int) where
+instance ByteOrder.FixedOrdering b => Serialize (ByteOrder.Fixed b Int) where
   size# _ = sizeOf## @Int
   constSize# _ = ConstSize# (sizeOf## @Int)
-  put = put . fromIntegral @(Fixed b Int) @(Fixed b Int64)
-  get = fromIntegral @(Fixed b Int64) @(Fixed b Int) <$> get
+  put = put . fromIntegral @(ByteOrder.Fixed b Int) @(ByteOrder.Fixed b Int64)
+  get = fromIntegral @(ByteOrder.Fixed b Int64) @(ByteOrder.Fixed b Int) <$> get
   {-# INLINE size# #-}
   {-# INLINE constSize# #-}
   {-# INLINE put #-}
   {-# INLINE get #-}
 
-instance FixedOrdering b => Serialize (Fixed b Word) where
+instance ByteOrder.FixedOrdering b => Serialize (ByteOrder.Fixed b Word) where
   size# _ = sizeOf## @Word
   constSize# _ = ConstSize# (sizeOf## @Word)
-  put = put . fromIntegral @(Fixed b Word) @(Fixed b Word64)
-  get = fromIntegral @(Fixed b Word64) @(Fixed b Word) <$> get
+  put = put . fromIntegral @(ByteOrder.Fixed b Word) @(ByteOrder.Fixed b Word64)
+  get = fromIntegral @(ByteOrder.Fixed b Word64) @(ByteOrder.Fixed b Word) <$> get
   {-# INLINE size# #-}
   {-# INLINE constSize# #-}
   {-# INLINE put #-}
@@ -253,7 +254,7 @@ instance Serialize a => Serialize [a] where
   get = do
     size :: Int <- fromIntegral <$> get @Word64
     xs <- foldM (\xs _ -> do x <- get; pure $ x : xs) [] [1 .. size]
-    pure $! reverse xs
+    pure $ reverse xs
 
 putFoldableWith :: (Serialize a, Foldable f) => Int -> f a -> Put
 putFoldableWith !size xs = put (fromIntegral size :: Word64) <> foldMap put xs
@@ -262,29 +263,26 @@ putFoldableWith !size xs = put (fromIntegral size :: Word64) <> foldMap put xs
 bruh :: [Word64] -> Put
 bruh = put
 
--- putLE :: Serialize (LittleEndian a) => a -> Put ()
--- putLE = put . LittleEndian
--- {-# INLINE putLE #-}
+bruhGet :: Get [Word64]
+bruhGet = get
 
--- putBE :: Serialize (BigEndian a) => a -> Put ()
--- putBE = put . BigEndian
--- {-# INLINE putBE #-}
+unsafeReinterpretCast :: forall a b. (Prim a, Prim b) => a -> b
+unsafeReinterpretCast x = runST $ do
+  marr <- Primitive.newPrimArray @_ @a 1
+  Primitive.writePrimArray marr 0 x
+  let marr' = coerce @_ @(MutablePrimArray _ b) marr
+  Primitive.readPrimArray marr' 0
+{-# INLINE unsafeReinterpretCast #-}
 
--- getLE :: forall a. Serialize (LittleEndian a) => Get a
--- getLE = coerce @(Get (LittleEndian a)) get
--- {-# INLINE getLE #-}
+putPrim :: forall a. (Prim a, PrimUnaligned a) => a -> Put
+putPrim x = Put# \e# ps@(PS# i#) s# -> case writeEnv# e# i# x s# of
+  s# -> (# s#, incPS# (sizeOf## @a) ps #)
+{-# INLINE putPrim #-}
 
--- getBE :: forall a. Serialize (BigEndian a) => Get a
--- getBE = coerce @(Get (BigEndian a)) get
--- {-# INLINE getBE #-}
-
--- unsafeReinterpretCast :: forall a b. (Prim a, Prim b) => a -> b
--- unsafeReinterpretCast x = runST $ do
---   marr <- newPrimArray @_ @a 1
---   writePrimArray marr 0 x
---   let marr' = coerce @_ @(MutablePrimArray _ b) marr
---   readPrimArray marr' 0
--- {-# INLINE unsafeReinterpretCast #-}
+getPrim :: forall a. (Prim a, PrimUnaligned a) => Get a
+getPrim = Get# \bs# gs@(GS# i#) -> case indexBS# i# bs# of
+  x -> GR# (incGS# (sizeOf## @a) gs) x
+{-# INLINE getPrim #-}
 
 -- unroll :: (Integral a, Bits a) => a -> [Word8]
 -- unroll = unfoldr step

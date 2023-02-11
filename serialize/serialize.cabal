@@ -85,8 +85,7 @@ library
         Serialize.Internal.Get
         Serialize.Internal.Put
         Serialize.Internal.Util
-        Serialize.Internal.Prim
-        Serialize.Internal.Types
+        Serialize.Internal.Exts
   include-dirs:
     include,
 

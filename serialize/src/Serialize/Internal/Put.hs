@@ -1,10 +1,9 @@
 module Serialize.Internal.Put where
 
-import Data.Kind (Type)
 import Data.Primitive (MutableByteArray#, Prim)
 import Data.Primitive.ByteArray.Unaligned (PrimUnaligned (..))
-import GHC.Exts (Int#, State#, (+#), (>=#))
-import Serialize.Internal.Util (sizeOf##)
+import Serialize.Internal.Exts
+import Serialize.Internal.Util
 
 newtype Put :: Type where
   Put# ::
