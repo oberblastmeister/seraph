@@ -81,6 +81,7 @@ library
   hs-source-dirs: src
   exposed-modules:
     Serialize
+      Serialize.QualifiedDo
       Serialize.Internal
         Serialize.Internal.Get
         Serialize.Internal.Put
