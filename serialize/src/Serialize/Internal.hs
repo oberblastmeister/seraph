@@ -17,13 +17,13 @@ import Control.Monad (foldM, (<$!>))
 import Control.Monad.ST (runST)
 import Data.ByteString (ByteString)
 import Data.ByteString.Short qualified as SBS
-import Data.Int
-import Data.Monoid (Dual (..), First (..), Last (..), Product (..), Sum (..))
+import Data.Int (Int16, Int32, Int64, Int8)
+import Data.Monoid (Dual (..), Product (..), Sum (..))
 import Data.Primitive (MutablePrimArray, Prim, sizeOf#)
 import Data.Primitive qualified as Primitive
-import Data.Primitive.ByteArray.Unaligned
+import Data.Primitive.ByteArray.Unaligned (PrimUnaligned)
 import Data.Tree (Tree)
-import Data.Word
+import Data.Word (Word16, Word32, Word64, Word8)
 import GHC.Generics (Generic)
 import GHC.Generics qualified as G
 import GHC.ST (ST (..))
@@ -338,7 +338,8 @@ encode x = runST $ do
   ST \s# -> case runPut# (put x) (Env# marr# (unI# sz)) (PS# 0#) s# of
     (# s#, _ #) -> (# s#, () #)
   Primitive.ByteArray arr# <- Primitive.unsafeFreezeByteArray marr
-  pure (SBS.fromShort (SBS.SBS arr#))
+  -- pinned ByteArray# is coerced to ByteString O(1)
+  pure $ SBS.fromShort $ SBS.SBS arr#
   where
     sz = size x
 

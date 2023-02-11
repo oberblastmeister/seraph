@@ -45,14 +45,14 @@ unpackByteString# bs@(B.Internal.PS fp@(ForeignPtr _ fpc) o l) =
           let base = Ptr (mutableByteArrayContents# marr)
               off = p `Foreign.minusPtr` base
           arr <- unsafeFreezeByteArray $ MutableByteArray marr
-          pure (arr, off, off + l + o)
+          pure (arr, off + o, off + o + l)
         _ -> case B.copy bs of
           B.Internal.PS fp@(ForeignPtr _ fpc) o l -> withForeignPtr fp $ \p -> case fpc of
             PlainPtr marr -> do
               let base = Ptr (mutableByteArrayContents# marr)
                   off = p `Foreign.minusPtr` base
               arr <- unsafeFreezeByteArray $ MutableByteArray marr
-              pure (arr, off, off + l + o)
+              pure (arr, off + o, off + o + l)
             _ -> error "should be PlainPtr"
    in case res of
         (ByteArray arr, I# off, I# len) -> (# arr, off, len #)
