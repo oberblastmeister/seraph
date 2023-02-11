@@ -19,7 +19,6 @@ maintainer:         littlebubu.shu@gmail.com
 -- A copyright notice.
 -- copyright:
 -- category:
-extra-source-files: CHANGELOG.md
 tested-with: GHC == 9.0.2, GHC == 9.2.4, GHC == 9.4.2
 
 flag force-alignment
@@ -31,7 +30,6 @@ common common-options
   default-extensions:
     LambdaCase,
     OverloadedStrings,
-    DuplicateRecordFields,
     DataKinds,
     GADTs,
     ViewPatterns,
@@ -39,14 +37,10 @@ common common-options
     TypeFamilies,
     TypeFamilyDependencies,
     FunctionalDependencies,
-    OverloadedLabels,
     ImportQualifiedPost,
-    ImpredicativeTypes,
-    LexicalNegation,
     NoStarIsType,
     NoGeneralizedNewtypeDeriving,
     DerivingVia,
-    PartialTypeSignatures,
     MagicHash,
     UnliftedNewtypes,
     UnboxedTuples,
