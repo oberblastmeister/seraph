@@ -29,6 +29,9 @@ import Serialize.Internal.Get
 import Serialize.Internal.Put
 import Serialize.Internal.Util
 import System.ByteOrder qualified as ByteOrder
+import Data.ByteString (ByteString)
+import GHC.ST (ST(..))
+import qualified Data.ByteString.Short as SBS
 
 #include "serialize.h"
 
@@ -75,9 +78,9 @@ constSize## :: forall a. Serialize a => ConstSize#
 constSize## = constSize# (proxy# @a)
 {-# INLINE constSize## #-}
 
-unsafeSize :: Serialize a => a -> Int
-unsafeSize x = I# (size# x)
-{-# INLINE unsafeSize #-}
+size :: Serialize a => a -> Int
+size x = I# (size# x)
+{-# INLINE size #-}
 
 class GSerializeSize f where
   gSize# :: f a -> Int#
@@ -160,7 +163,7 @@ instance (GSerializePut f, GSerializePut g) => GSerializePut (f G.:*: g) where
   {-# INLINE gPut #-}
 
 instance (GSerializeGet f, GSerializeGet g) => GSerializeGet (f G.:*: g) where
-  gGet = (G.:*:) <$> gGet <*> gGet
+  gGet = (G.:*:) <$!> gGet <*> gGet
   {-# INLINE gGet #-}
 
 instance (FitsInByte (SumArity (f G.:+: g)), GSerializeSizeSum 0 (f G.:+: g)) => GSerializeSize (f G.:+: g) where
@@ -173,8 +176,8 @@ instance (FitsInByte (SumArity (f G.:+: g)), GSerializePutSum 0 (f G.:+: g)) => 
 
 instance (FitsInByte (SumArity (f G.:+: g)), GSerializeGetSum 0 (f G.:+: g)) => GSerializeGet (f G.:+: g) where
   gGet = do
-    tag <- get
-    gGetSum# tag (proxy# @0)
+    tag <- get @Word8
+    gGetSum# (unW# (fromIntegral @Word8 @Word tag)) (proxy# @0)
   {-# INLINE gGet #-}
 
 instance GSerializeConstSize (f G.:+: g) where
@@ -188,7 +191,7 @@ class KnownNat n => GSerializePutSum n f where
   gPutSum :: f a -> Proxy# n -> Put
 
 class KnownNat n => GSerializeGetSum n f where
-  gGetSum# :: Word8 -> Proxy# n -> Get (f a)
+  gGetSum# :: Word# -> Proxy# n -> Get (f a)
 
 instance (GSerializeSizeSum n f, GSerializeSizeSum (n + SumArity f) g) => GSerializeSizeSum n (f G.:+: g) where
   gSizeSum# (G.L1 l) _ = gSizeSum# l (proxy# @n)
@@ -201,9 +204,9 @@ instance (GSerializePutSum n f, GSerializePutSum (n + SumArity f) g) => GSeriali
   {-# INLINE gPutSum #-}
 
 instance (GSerializeGetSum n f, GSerializeGetSum (n + SumArity f) g) => GSerializeGetSum n (f G.:+: g) where
-  gGetSum# tag p#
-    | tag < sizeL = G.L1 <$!> gGetSum# tag p#
-    | otherwise = G.R1 <$!> gGetSum# tag (proxy# @(n + SumArity f))
+  gGetSum# tag# p#
+    | W# tag# < sizeL = G.L1 <$!> gGetSum# tag# p#
+    | otherwise = G.R1 <$!> gGetSum# tag# (proxy# @(n + SumArity f))
     where
       sizeL = fromInteger (natVal' (proxy# @(n + SumArity f)))
   {-# INLINE gGetSum# #-}
@@ -219,11 +222,11 @@ instance (GSerializePut f, KnownNat n) => GSerializePutSum n (G.C1 c f) where
 
 instance (GSerializeGet f, KnownNat n) => GSerializeGetSum n (G.C1 c f) where
   gGetSum# tag _
-    | tag == cur = gGet
-    | tag > cur = error "Sum tag invalid"
+    | W# tag == cur = gGet
+    | W# tag > cur = error "Sum tag invalid"
     | otherwise = error "Implementation error"
     where
-      cur = fromInteger @Word8 (natVal' (proxy# @n))
+      cur = fromInteger @Word (natVal' (proxy# @n))
 
 type SumArity :: (Type -> Type) -> Nat
 type family SumArity a where
@@ -241,7 +244,7 @@ instance ByteOrder.FixedOrdering b => Serialize (ByteOrder.Fixed b Int) where
   size# _ = sizeOf## @Int
   constSize# _ = ConstSize# (sizeOf## @Int)
   put = put . fromIntegral @(ByteOrder.Fixed b Int) @(ByteOrder.Fixed b Int64)
-  get = fromIntegral @(ByteOrder.Fixed b Int64) @(ByteOrder.Fixed b Int) <$> get
+  get = fromIntegral @(ByteOrder.Fixed b Int64) @(ByteOrder.Fixed b Int) <$!> get
   {-# INLINE size# #-}
   {-# INLINE constSize# #-}
   {-# INLINE put #-}
@@ -251,7 +254,7 @@ instance ByteOrder.FixedOrdering b => Serialize (ByteOrder.Fixed b Word) where
   size# _ = sizeOf## @Word
   constSize# _ = ConstSize# (sizeOf## @Word)
   put = put . fromIntegral @(ByteOrder.Fixed b Word) @(ByteOrder.Fixed b Word64)
-  get = fromIntegral @(ByteOrder.Fixed b Word64) @(ByteOrder.Fixed b Word) <$> get
+  get = fromIntegral @(ByteOrder.Fixed b Word64) @(ByteOrder.Fixed b Word) <$!> get
   {-# INLINE size# #-}
   {-# INLINE constSize# #-}
   {-# INLINE put #-}
@@ -290,12 +293,12 @@ instance (Serialize a, Serialize b) => Serialize (Either a b)
 instance Serialize a => Serialize [a] where
   size# xs = case constSize## @a of
     ConstSize# sz# -> unI# (length xs) *# sz#
-    _ -> unI# $ sum $ unsafeSize <$> xs
+    _ -> unI# $ sum $ size <$!> xs
 
   put xs = putFoldableWith (length xs) xs
 
   get = do
-    size :: Int <- fromIntegral <$> get @Word64
+    size :: Int <- fromIntegral <$!> get @Word64
     xs <- foldM (\xs _ -> do x <- get; pure $ x : xs) [] [1 .. size]
     pure $ reverse xs
 
@@ -306,7 +309,7 @@ putFoldableWith !size xs = put (fromIntegral size :: Word64) <> foldMap put xs
 bruh :: Either Word64 Word16 -> Put
 bruh = put
 
-bruhGet :: Get [Word64]
+bruhGet :: Get (Either Word64 Word16)
 bruhGet = get
 
 unsafeReinterpretCast :: forall a b. (Prim a, Prim b) => a -> b
@@ -324,5 +327,21 @@ putPrim x = Put# \e# ps@(PS# i#) s# -> case writeEnv# e# i# x s# of
 
 getPrim :: forall a. (Prim a, PrimUnaligned a) => Get a
 getPrim = Get# \bs# gs@(GS# i#) -> case indexBS# i# bs# of
-  x -> GR# (incGS# (sizeOf## @a) gs) x
+  !x -> GR# (incGS# (sizeOf## @a) gs) x
 {-# INLINE getPrim #-}
+
+encode :: Serialize a => a -> ByteString
+encode x = runST $ do
+  marr@(Primitive.MutableByteArray marr#) <- Primitive.newPinnedByteArray sz
+  ST \s# -> case runPut# (put x) (Env# marr# (unI# sz)) (PS# 0#) s# of
+    (# s#, _ #) -> (# s#, () #)
+  Primitive.ByteArray arr# <- Primitive.unsafeFreezeByteArray marr
+  pure (SBS.fromShort (SBS.SBS arr#))
+  where
+    sz = size x
+
+decode :: Serialize a => ByteString -> a
+decode bs = case runGet# get (BS# arr# l#) (GS# i#) of
+  GR# _ x -> x
+  where
+    !(# arr#, i#, l# #) = unpackByteString# bs

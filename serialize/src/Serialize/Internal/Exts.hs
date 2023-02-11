@@ -6,6 +6,8 @@ import GHC.Exts as X
     Int#,
     Proxy#,
     State#,
+    Word (..),
+    Word#,
     coerce,
     proxy#,
     (*#),
