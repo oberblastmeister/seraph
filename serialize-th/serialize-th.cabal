@@ -20,6 +20,7 @@ maintainer:         littlebubu.shu@gmail.com
 -- copyright:
 -- category:
 extra-source-files: CHANGELOG.md
+tested-with: GHC == 9.0.2, GHC == 9.2.4, GHC == 9.4.2
 
 common common-options
   default-language: GHC2021
