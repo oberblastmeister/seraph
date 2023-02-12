@@ -21,10 +21,6 @@ maintainer:         littlebubu.shu@gmail.com
 -- category:
 tested-with: GHC == 9.0.2, GHC == 9.2.4, GHC == 9.4.2
 
-flag force-alignment
-  manual: True
-  default: True
-
 common common-options
   default-extensions:
     FlexibleInstances,
