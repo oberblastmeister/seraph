@@ -8,42 +8,49 @@ import Serialize.Internal.Util
 newtype Put :: Type where
   Put# ::
     { runPut# ::
-        forall s.
-        Env# s ->
+        PE# ->
         PS# ->
-        State# s ->
-        (# State# s, PS# #)
+        S# ->
+        PR#
     } ->
     Put
 
-newtype Env# s = Env## (# MutableByteArray# s, Int# #)
+newtype PE# = PE## (# MutableByteArray# RealWorld, Int# #)
 
 newtype PS# = PutState# (# Int# #)
 
-pattern Env# :: MutableByteArray# s -> Int# -> Env# s
-pattern Env# marr# l# = Env## (# marr#, l# #)
+newtype PR# = PR## (# S#, PS# #)
+
+pattern PE# :: MutableByteArray# RealWorld -> Int# -> PE#
+pattern PE# marr# l# = PE## (# marr#, l# #)
 
 pattern PS# :: Int# -> PS#
 pattern PS# x = PutState# (# x #)
 
+pattern PR# :: S# -> PS# -> PR#
+pattern PR# s# ps# = PR## (# s#, ps# #)
+
 {-# COMPLETE PS# #-}
 
-{-# COMPLETE Env# #-}
+{-# COMPLETE PE# #-}
+
+{-# COMPLETE PR# #-}
 
 incPS# :: Int# -> PS# -> PS#
 incPS# i# (PS# x#) = PS# (i# +# x#)
 {-# INLINE incPS# #-}
 
-writeEnv# :: forall a s. (Prim a, PrimUnaligned a) => Env# s -> Int# -> a -> State# s -> State# s
-writeEnv# (Env# marr# l#) i# x s# = case i# +# sizeOf## @a >=# l# of
-  1# -> writeUnalignedByteArray# marr# i# x s#
-  _ -> error "Index out of bounds"
+writePE# :: forall a. (Prim a, PrimUnaligned a) => PE# -> Int# -> a -> S# -> S#
+writePE# (PE# marr# l#) i# x s# = case i# +# sizeOf## @a ># l# of
+  1# -> error "Index out of bounds"
+  _ -> writeUnalignedByteArray# marr# i# x s#
+{-# INLINE writePE# #-}
 
 instance Semigroup Put where
   Put# p1 <> Put# p2 = Put# \marr# ps# s# -> case p1 marr# ps# s# of
-    (# s#, ps# #) -> p2 marr# ps# s#
+    PR# s# ps# -> p2 marr# ps# s#
   {-# INLINE (<>) #-}
 
 instance Monoid Put where
-  mempty = Put# \_marr# ps# s# -> (# s#, ps# #)
+  mempty = Put# \_marr# ps# s# -> PR# s# ps#
   {-# INLINE mempty #-}

@@ -20,7 +20,7 @@ import Data.Tree (Tree)
 import Data.Word (Word16, Word32, Word64, Word8)
 import GHC.Generics (Generic)
 import GHC.Generics qualified as G
-import GHC.ST (ST (..))
+import GHC.IO (IO (..))
 import GHC.TypeLits
 import Serialize.Internal.Exts
 import Serialize.Internal.Get
@@ -171,7 +171,7 @@ instance (FitsInByte (SumArity (f G.:+: g)), GSerializeSizeSum 0 (f G.:+: g)) =>
   {-# INLINE gSize# #-}
 
 instance (FitsInByte (SumArity (f G.:+: g)), GSerializePutSum 0 (f G.:+: g)) => GSerializePut (f G.:+: g) where
-  gPut x = gPutSum x (proxy# @0)
+  gPut x = gPutSum# x (proxy# @0)
   {-# INLINE gPut #-}
 
 instance (FitsInByte (SumArity (f G.:+: g)), GSerializeGetSum 0 (f G.:+: g)) => GSerializeGet (f G.:+: g) where
@@ -188,7 +188,7 @@ class KnownNat n => GSerializeSizeSum n f where
   gSizeSum# :: f a -> Proxy# n -> Int#
 
 class KnownNat n => GSerializePutSum n f where
-  gPutSum :: f a -> Proxy# n -> Put
+  gPutSum# :: f a -> Proxy# n -> Put
 
 class KnownNat n => GSerializeGetSum n f where
   gGetSum# :: Word# -> Proxy# n -> Get (f a)
@@ -199,9 +199,9 @@ instance (GSerializeSizeSum n f, GSerializeSizeSum (n + SumArity f) g) => GSeria
   {-# INLINE gSizeSum# #-}
 
 instance (GSerializePutSum n f, GSerializePutSum (n + SumArity f) g) => GSerializePutSum n (f G.:+: g) where
-  gPutSum (G.L1 l) _ = gPutSum l (proxy# @n)
-  gPutSum (G.R1 r) _ = gPutSum r (proxy# @(n + SumArity f))
-  {-# INLINE gPutSum #-}
+  gPutSum# (G.L1 l) _ = gPutSum# l (proxy# @n)
+  gPutSum# (G.R1 r) _ = gPutSum# r (proxy# @(n + SumArity f))
+  {-# INLINE gPutSum# #-}
 
 instance (GSerializeGetSum n f, GSerializeGetSum (n + SumArity f) g) => GSerializeGetSum n (f G.:+: g) where
   gGetSum# tag# p#
@@ -216,7 +216,7 @@ instance (GSerializeSize f, KnownNat n) => GSerializeSizeSum n (G.C1 c f) where
   {-# INLINE gSizeSum# #-}
 
 instance (GSerializePut f, KnownNat n) => GSerializePutSum n (G.C1 c f) where
-  gPutSum x _ = put tag <> gPut x
+  gPutSum# x _ = put tag <> gPut x
     where
       tag = fromInteger @Word8 (natVal' (proxy# @n))
 
@@ -291,19 +291,20 @@ instance Serialize a => Serialize (Maybe a)
 instance (Serialize a, Serialize b) => Serialize (Either a b)
 
 instance Serialize a => Serialize [a] where
-  size# xs = case constSize## @a of
-    ConstSize# sz# -> unI# (length xs) *# sz#
-    _ -> unI# $ sum $ size <$!> xs
+  size# xs =
+    sizeOf## @Word32 +# case constSize## @a of
+      ConstSize# sz# -> unI# (length xs) *# sz#
+      _ -> unI# $ sum $ size <$> xs
 
   put xs = putFoldableWith (length xs) xs
 
   get = do
-    size :: Int <- fromIntegral <$!> get @Word64
+    size <- get @Word32
     xs <- foldM (\xs _ -> do x <- get; pure $ x : xs) [] [1 .. size]
     pure $ reverse xs
 
 putFoldableWith :: (Serialize a, Foldable f) => Int -> f a -> Put
-putFoldableWith !size xs = put (fromIntegral size :: Word64) <> foldMap put xs
+putFoldableWith !size xs = put (fromIntegral @Int @Word32 size) <> foldMap put xs
 {-# INLINE putFoldableWith #-}
 
 unsafeReinterpretCast :: forall a b. (Prim a, Prim b) => a -> b
@@ -315,29 +316,38 @@ unsafeReinterpretCast x = runST $ do
 {-# INLINE unsafeReinterpretCast #-}
 
 putPrim :: forall a. (Prim a, PrimUnaligned a) => a -> Put
-putPrim x = Put# \e# ps@(PS# i#) s# -> case writeEnv# e# i# x s# of
-  s# -> (# s#, incPS# (sizeOf## @a) ps #)
+putPrim x = Put# \pe# ps@(PS# i#) s# -> case writePE# pe# i# x s# of
+  s# -> PR# s# (incPS# (sizeOf## @a) ps)
 {-# INLINE putPrim #-}
 
 getPrim :: forall a. (Prim a, PrimUnaligned a) => Get a
-getPrim = Get# \bs# gs@(GS# i#) -> case indexBS# i# bs# of
-  !x -> GR# (incGS# (sizeOf## @a) gs) x
+getPrim = Get# \ge# gs@(GS# i#) s# -> case indexGE# i# ge# of
+  !x -> GR# s# (incGS# (sizeOf## @a) gs) x
 {-# INLINE getPrim #-}
 
-encode :: Serialize a => a -> ByteString
-encode x = runST $ do
+encodeIO :: Serialize a => a -> IO ByteString
+encodeIO x = do
   marr@(Primitive.MutableByteArray marr#) <- Primitive.newPinnedByteArray sz
-  ST \s# -> case runPut# (put x) (Env# marr# (unI# sz)) (PS# 0#) s# of
-    (# s#, _ #) -> (# s#, () #)
+  IO \s# -> case runPut# (put x) (PE# marr# (unI# sz)) (PS# 0#) s# of
+    PR# s# _ -> (# s#, () #)
   pinnedToByteString <$!> Primitive.unsafeFreezeByteArray marr
   where
     sz = size x
 
-decode' :: Serialize a => ByteString -> a
-decode' bs = case runGet# get (BS# arr# l#) (GS# i#) of
-  GR# _ x -> x
+encode :: Serialize a => a -> ByteString
+encode = IO.Unsafe.unsafeDupablePerformIO . encodeIO
+
+decodeIO :: Serialize a => ByteString -> IO a
+decodeIO bs = do
+  IO \s# -> case runGet# get (GE# arr# l#) (GS# i#) s# of
+    GR# s# _ x -> (# s#, x #)
   where
     !(# arr#, i#, l# #) = unpackByteString# bs
 
 decode :: Serialize a => ByteString -> Either GetException a
-decode = IO.Unsafe.unsafeDupablePerformIO . Exception.try . Exception.evaluate . decode'
+decode = IO.Unsafe.unsafeDupablePerformIO . Exception.try . decodeIO
+
+decode' :: Serialize a => ByteString -> a
+decode' bs = case decode bs of
+  Left e -> Exception.throw e
+  Right x -> x

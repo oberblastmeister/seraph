@@ -5,6 +5,7 @@ import GHC.Exts as X
   ( Int (..),
     Int#,
     Proxy#,
+    RealWorld,
     State#,
     Word (..),
     Word#,
@@ -12,6 +13,8 @@ import GHC.Exts as X
     proxy#,
     (*#),
     (+#),
+    (<#),
     (<=#),
+    (>#),
     (>=#),
   )

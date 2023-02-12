@@ -9,8 +9,9 @@ import Serialize.Internal.Util
 newtype Get :: Type -> Type where
   Get# ::
     { runGet# ::
-        Env# ->
+        GE# ->
         GS# ->
+        S# ->
         GR# a
     } ->
     Get a
@@ -20,50 +21,50 @@ newtype GS# = GetState# (# Int# #)
 pattern GS# :: Int# -> GS#
 pattern GS# x = GetState# (# x #)
 
-newtype GR# a = GetRes# (# GS#, a #)
+newtype GR# a = GR## (# State# RealWorld, GS#, a #)
 
-pattern GR# :: GS# -> a -> GR# a
-pattern GR# gs# x = GetRes# (# gs#, x #)
+pattern GR# :: State# RealWorld -> GS# -> a -> GR# a
+pattern GR# s# gs# x = GR## (# s#, gs#, x #)
 
 {-# COMPLETE GR# #-}
 
 {-# COMPLETE GS# #-}
 
-newtype Env# = BS## (# ByteArray#, Int# #)
+newtype GE# = GE## (# ByteArray#, Int# #)
 
-pattern BS# :: ByteArray# -> Int# -> Env#
-pattern BS# arr# l# = BS## (# arr#, l# #)
+pattern GE# :: ByteArray# -> Int# -> GE#
+pattern GE# arr# l# = GE## (# arr#, l# #)
 
-{-# COMPLETE BS# #-}
+{-# COMPLETE GE# #-}
 
-indexBS# :: forall a. (Prim a, PrimUnaligned a) => Int# -> Env# -> a
-indexBS# i# (BS# arr# l#) = case i# +# sizeOf## @a >=# l# of
-  1# -> case indexUnalignedByteArray# arr# i# of
-    x -> x
-  _ -> Exception.throw $ IndexOutOfBounds (I# (i# +# sizeOf## @a)) (I# l#)
-{-# INLINE indexBS# #-}
+indexGE# :: forall a. (Prim a, PrimUnaligned a) => Int# -> GE# -> a
+indexGE# i# (GE# arr# l#) = case i# +# sizeOf## @a ># l# of
+  1# -> Exception.throw $ IndexOutOfBounds (I# (i# +# sizeOf## @a)) (I# l#)
+  _ -> case indexUnalignedByteArray# arr# i# of
+    !x -> x
+{-# INLINE indexGE# #-}
 
 incGS# :: Int# -> GS# -> GS#
 incGS# i# (GS# x#) = GS# (i# +# x#)
 {-# INLINE incGS# #-}
 
 instance Functor Get where
-  fmap f (Get# g) = Get# \arr# gs# -> case g arr# gs# of
-    GR# gs# x -> GR# gs# (f x)
+  fmap f (Get# g) = Get# \arr# gs# s# -> case g arr# gs# s# of
+    GR# s# gs# x -> GR# s# gs# (f x)
   {-# INLINE fmap #-}
 
 instance Applicative Get where
-  pure x = Get# \_arr# gs# -> GR# gs# x
+  pure x = Get# \_arr# gs# s# -> GR# s# gs# x
   {-# INLINE pure #-}
 
-  Get# g1 <*> Get# g2 = Get# \arr# gs# -> case g1 arr# gs# of
-    GR# gs# f -> case g2 arr# gs# of
-      GR# gs# x -> GR# gs# (f x)
+  Get# g1 <*> Get# g2 = Get# \arr# gs# s# -> case g1 arr# gs# s# of
+    GR# s# gs# f -> case g2 arr# gs# s# of
+      GR# s# gs# x -> GR# s# gs# (f x)
   {-# INLINE (<*>) #-}
 
 instance Monad Get where
-  Get# g >>= fm = Get# \arr# gs# -> case g arr# gs# of
-    GR# gs# x -> runGet# (fm x) arr# gs#
+  Get# g >>= fm = Get# \arr# gs# s# -> case g arr# gs# s# of
+    GR# s# gs# x -> runGet# (fm x) arr# gs# s#
   {-# INLINE (>>=) #-}
 
 data GetException

@@ -7,6 +7,8 @@ module Serialize.Internal.Util
     (<!$!>),
     unpackByteString#,
     pinnedToByteString,
+    runIO#,
+    S#,
   )
 where
 
@@ -17,9 +19,12 @@ import Data.Primitive (Prim)
 import Data.Primitive qualified as Primitive
 import Foreign qualified
 import GHC.ForeignPtr (ForeignPtr (..), ForeignPtrContents (PlainPtr))
+import GHC.IO qualified
 import Serialize.Internal.Exts
 import System.IO.Unsafe (unsafeDupablePerformIO)
 import Unsafe.Coerce qualified
+
+type S# = State# RealWorld
 
 sizeOf## :: forall a. Prim a => Int#
 sizeOf## = Primitive.sizeOf# (undefined :: a)
@@ -32,6 +37,10 @@ unI# (I# i#) = i#
 unW# :: Word -> Word#
 unW# (W# w#) = w#
 {-# INLINE unW# #-}
+
+runIO# :: IO a -> State# RealWorld -> (# State# RealWorld, a #)
+runIO# = coerce
+{-# INLINE runIO# #-}
 
 (<!$!>) :: Monad m => (a -> b) -> m a -> m b
 f <!$!> m = do

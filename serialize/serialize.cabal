@@ -101,6 +101,7 @@ test-suite serialize-test
   hs-source-dirs: test
   main-is: Spec.hs
   other-modules:
+    PropertiesSpec
   build-depends:
     serialize,
     hspec ^>= 2.9.4,
@@ -108,3 +109,5 @@ test-suite serialize-test
     quickcheck-instances ^>= 0.3.27,
   build-tool-depends:
     hspec-discover:hspec-discover,
+  if impl(ghc >= 9.2.2)
+    ghc-options: -fcheck-prim-bounds
