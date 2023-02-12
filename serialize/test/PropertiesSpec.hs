@@ -27,7 +27,9 @@ props =
     serializeProp @[(Int, Int64, Either Word8 Word8)],
     serializeProp @Text,
     serializeProp @ByteString,
-    serializeProp @[Either Text ByteString]
+    serializeProp @[Either Text ByteString],
+    serializeProp @Float,
+    serializeProp @Double
   ]
 
 spec :: Spec

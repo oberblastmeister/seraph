@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ForeignFunctionInterface #-}
 
 module Serialize.Internal.Util
   ( sizeOf##,
@@ -10,6 +11,8 @@ module Serialize.Internal.Util
     runIO#,
     S#,
     sizeOf',
+    ( .# ),
+    ( #. ),
   )
 where
 
@@ -24,6 +27,7 @@ import GHC.IO qualified
 import Serialize.Internal.Exts
 import System.IO.Unsafe (unsafeDupablePerformIO)
 import Unsafe.Coerce qualified
+import Data.Coerce
 
 type S# = State# RealWorld
 
@@ -79,3 +83,15 @@ pinnedToByteString off len bs@(Primitive.ByteArray b#)
   where
     !(Primitive.Ptr addr#) = Primitive.byteArrayContents bs
     fp = ForeignPtr addr# (PlainPtr (Unsafe.Coerce.unsafeCoerce# b#))
+
+( #. ) :: Coercible c b => (b -> c) -> (a -> b) -> (a -> c)
+( #. ) _ = coerce (\x -> x :: b) :: forall a b. Coercible b a => a -> b
+
+( .# ) :: Coercible b a => (b -> c) -> (a -> b) -> (a -> c)
+( .# ) pbc _ = coerce pbc
+
+{-# INLINE ( #. ) #-}
+{-# INLINE ( .# ) #-}
+
+infixr 9 #.
+infixl 8 .#

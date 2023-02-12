@@ -24,6 +24,7 @@ import Data.Text.Internal qualified
 import Data.Tree (Tree)
 import Data.Word (Word16, Word32, Word64, Word8)
 import Foreign qualified
+import GHC.Float qualified
 import GHC.Generics (Generic)
 import GHC.Generics qualified as G
 import GHC.IO (IO (..))
@@ -248,8 +249,8 @@ type family FitsInByteResult b where
   FitsInByteResult False = TypeLits.TypeError (TypeLits.Text "Generic deriving of Serialize instances can only be used on datatypes with fewer than 256 constructors.")
 
 instance ByteOrder.FixedOrdering b => Serialize (ByteOrder.Fixed b Int) where
-  size# _ = sizeOf## @Int
-  constSize# _ = ConstSize# (sizeOf## @Int)
+  size# _ = sizeOf## @Int64
+  constSize# _ = ConstSize# (sizeOf## @Int64)
   put = put . fromIntegral @(ByteOrder.Fixed b Int) @(ByteOrder.Fixed b Int64)
   get = fromIntegral @(ByteOrder.Fixed b Int64) @(ByteOrder.Fixed b Int) <$!> get
   {-# INLINE size# #-}
@@ -258,10 +259,30 @@ instance ByteOrder.FixedOrdering b => Serialize (ByteOrder.Fixed b Int) where
   {-# INLINE get #-}
 
 instance ByteOrder.FixedOrdering b => Serialize (ByteOrder.Fixed b Word) where
-  size# _ = sizeOf## @Word
-  constSize# _ = ConstSize# (sizeOf## @Word)
+  size# _ = sizeOf## @Word64
+  constSize# _ = ConstSize# (sizeOf## @Word64)
   put = put . fromIntegral @(ByteOrder.Fixed b Word) @(ByteOrder.Fixed b Word64)
   get = fromIntegral @(ByteOrder.Fixed b Word64) @(ByteOrder.Fixed b Word) <$!> get
+  {-# INLINE size# #-}
+  {-# INLINE constSize# #-}
+  {-# INLINE put #-}
+  {-# INLINE get #-}
+
+instance ByteOrder.FixedOrdering b => Serialize (ByteOrder.Fixed b Float) where
+  size# _ = sizeOf## @Word32
+  constSize# _ = ConstSize# (sizeOf## @Word32)
+  put = put . ByteOrder.Fixed @b #. GHC.Float.castFloatToWord32 .# ByteOrder.getFixed @b
+  get = (ByteOrder.Fixed @b #. GHC.Float.castWord32ToFloat .# ByteOrder.getFixed @b) <$!> get
+  {-# INLINE size# #-}
+  {-# INLINE constSize# #-}
+  {-# INLINE put #-}
+  {-# INLINE get #-}
+
+instance ByteOrder.FixedOrdering b => Serialize (ByteOrder.Fixed b Double) where
+  size# _ = sizeOf## @Word64
+  constSize# _ = ConstSize# (sizeOf## @Word64)
+  put = put . ByteOrder.Fixed @b #. GHC.Float.castDoubleToWord64 .# ByteOrder.getFixed @b
+  get = (ByteOrder.Fixed @b #. GHC.Float.castWord64ToDouble .# ByteOrder.getFixed @b) <$!> get
   {-# INLINE size# #-}
   {-# INLINE constSize# #-}
   {-# INLINE put #-}
@@ -279,6 +300,8 @@ deriveSerializePrim (Int32)
 deriveSerializePrim (Int64)
 deriveSerializePrimLE (Int)
 
+deriveSerializePrimLE (Float)
+deriveSerializePrimLE (Double)
 deriveSerializeNewtype (Dual)
 deriveSerializeNewtype (Sum)
 deriveSerializeNewtype (Product)
