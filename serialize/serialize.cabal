@@ -83,7 +83,11 @@ library
         Serialize.Internal.Util
         Serialize.Internal.Exts
   include-dirs:
-    include,
+    include
+  -- need to add this so it appears in cabal sdist
+  -- makes haskell-ci work
+  install-includes:
+    serialize.h
 
 common rtsopts
   ghc-options:
