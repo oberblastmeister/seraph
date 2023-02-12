@@ -13,6 +13,8 @@ import Control.Monad.ST (runST)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
 import Data.ByteString.Internal qualified as B.Internal
+import Data.ByteString.Short (ShortByteString)
+import Data.ByteString.Short qualified as SBS
 import Data.Int (Int16, Int32, Int64, Int8)
 import Data.Monoid (Dual (..), Product (..), Sum (..))
 import Data.Primitive (MutablePrimArray, Prim, sizeOf#)
@@ -306,6 +308,8 @@ deriveSerializeNewtype (Dual)
 deriveSerializeNewtype (Sum)
 deriveSerializeNewtype (Product)
 
+instance Serialize Bool
+
 instance Serialize Ordering
 
 instance Serialize a => Serialize (Tree a)
@@ -348,6 +352,12 @@ instance Serialize Text where
       -- can't use getByteArray here because we need to ensure it is UTF-8
       -- wait for text to allow decoding UTF-8 from ByteArray
       pure $! Text.Encoding.decodeUtf8 $! pinnedToByteString i size arr
+
+instance Serialize ShortByteString where
+  size# bs = sizeOf## @Word32 +# unI# (SBS.length bs)
+  {-# INLINE size# #-}
+  put (SBS.SBS arr#) = put (Primitive.ByteArray arr#)
+  get = (\(Primitive.ByteArray arr#) -> SBS.SBS arr#) <$> get
 
 instance Serialize ByteString where
   size# bs = sizeOf## @Word32 +# unI# (B.length bs)

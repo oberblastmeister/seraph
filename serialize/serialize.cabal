@@ -120,7 +120,7 @@ test-suite serialize-test
   hs-source-dirs: test
   main-is: Spec.hs
   other-modules:
-    PropertiesSpec
+    RoundTripSpec
   build-depends:
     serialize,
     hspec ^>= 2.9.4,

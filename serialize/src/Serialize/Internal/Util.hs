@@ -1,5 +1,4 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE ForeignFunctionInterface #-}
 
 module Serialize.Internal.Util
   ( sizeOf##,
