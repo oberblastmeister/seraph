@@ -9,6 +9,7 @@ module Serialize.Internal.Util
     pinnedToByteString,
     runIO#,
     S#,
+    sizeOf',
   )
 where
 
@@ -25,6 +26,10 @@ import System.IO.Unsafe (unsafeDupablePerformIO)
 import Unsafe.Coerce qualified
 
 type S# = State# RealWorld
+
+sizeOf' :: forall a. Prim a => Int
+sizeOf' = Primitive.sizeOf (undefined :: a)
+{-# INLINE sizeOf' #-}
 
 sizeOf## :: forall a. Prim a => Int#
 sizeOf## = Primitive.sizeOf# (undefined :: a)
@@ -67,11 +72,10 @@ unpackByteString# bs@(B.Internal.PS (ForeignPtr (Primitive.Ptr -> p) fpc) o l) =
             pure (arr, off + o, off + o + l)
           _ -> error "should be PlainPtr"
 
-pinnedToByteString :: Primitive.ByteArray -> ByteString
-pinnedToByteString bs@(Primitive.ByteArray b#)
-  | Primitive.isByteArrayPinned bs = B.Internal.PS fp 0 len
+pinnedToByteString :: Int -> Int -> Primitive.ByteArray -> ByteString
+pinnedToByteString off len bs@(Primitive.ByteArray b#)
+  | Primitive.isByteArrayPinned bs = B.Internal.PS fp off len
   | otherwise = error "ByteArray must be pinned"
   where
     !(Primitive.Ptr addr#) = Primitive.byteArrayContents bs
     fp = ForeignPtr addr# (PlainPtr (Unsafe.Coerce.unsafeCoerce# b#))
-    len = Primitive.sizeofByteArray bs

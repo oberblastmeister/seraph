@@ -2,7 +2,8 @@ module Serialize.Internal.Get where
 
 import Control.Exception qualified as Exception
 import Data.Primitive
-import Data.Primitive.ByteArray.Unaligned (PrimUnaligned (..))
+import Data.Primitive qualified as Primitive
+import Data.Primitive.ByteArray.Unaligned (PrimUnaligned (..), indexUnalignedByteArray)
 import Serialize.Internal.Exts
 import Serialize.Internal.Util
 
@@ -77,3 +78,14 @@ instance Show GetException where
   show (InvalidSumTag cur tag) = "Invalid sum tag: " ++ show cur ++ " != " ++ show tag
 
 instance Exception.Exception GetException
+
+unsafeWithGet :: Int -> (Primitive.ByteArray -> Int -> IO a) -> Get a
+unsafeWithGet (I# o#) f = Get# \(GE# arr# l#) gs@(GS# i#) s# -> case i# +# o# ># l# of
+  1# -> Exception.throw $ IndexOutOfBounds (I# (i# +# o#)) (I# l#)
+  _ -> case runIO# (f (Primitive.ByteArray arr#) (I# i#)) s# of
+    (# s#, x #) -> GR# s# (incGS# o# gs) x
+{-# INLINE unsafeWithGet #-}
+
+getPrim :: forall a. (Prim a, PrimUnaligned a) => Get a
+getPrim = unsafeWithGet (sizeOf' @a) \arr i -> pure $! indexUnalignedByteArray arr i
+{-# INLINE getPrim #-}

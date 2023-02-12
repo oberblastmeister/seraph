@@ -11,17 +11,24 @@ import Control.Exception qualified as Exception
 import Control.Monad (foldM, (<$!>))
 import Control.Monad.ST (runST)
 import Data.ByteString (ByteString)
+import Data.ByteString qualified as B
+import Data.ByteString.Internal qualified as B.Internal
 import Data.Int (Int16, Int32, Int64, Int8)
 import Data.Monoid (Dual (..), Product (..), Sum (..))
 import Data.Primitive (MutablePrimArray, Prim, sizeOf#)
 import Data.Primitive qualified as Primitive
-import Data.Primitive.ByteArray.Unaligned (PrimUnaligned)
+import Data.Text (Text)
+import Data.Text.Array qualified
+import Data.Text.Encoding qualified as Text.Encoding
+import Data.Text.Internal qualified
 import Data.Tree (Tree)
 import Data.Word (Word16, Word32, Word64, Word8)
+import Foreign qualified
 import GHC.Generics (Generic)
 import GHC.Generics qualified as G
 import GHC.IO (IO (..))
-import GHC.TypeLits
+import GHC.TypeLits (KnownNat, Nat, type (+), type (<=?))
+import GHC.TypeLits qualified as TypeLits
 import Serialize.Internal.Exts
 import Serialize.Internal.Get
 import Serialize.Internal.Put
@@ -208,7 +215,7 @@ instance (GSerializeGetSum n f, GSerializeGetSum (n + SumArity f) g) => GSeriali
     | W# tag# < sizeL = G.L1 <$!> gGetSum# tag# p#
     | otherwise = G.R1 <$!> gGetSum# tag# (proxy# @(n + SumArity f))
     where
-      sizeL = fromInteger (natVal' (proxy# @(n + SumArity f)))
+      sizeL = fromInteger (TypeLits.natVal' (proxy# @(n + SumArity f)))
   {-# INLINE gGetSum# #-}
 
 instance (GSerializeSize f, KnownNat n) => GSerializeSizeSum n (G.C1 c f) where
@@ -218,7 +225,7 @@ instance (GSerializeSize f, KnownNat n) => GSerializeSizeSum n (G.C1 c f) where
 instance (GSerializePut f, KnownNat n) => GSerializePutSum n (G.C1 c f) where
   gPutSum# x _ = put tag <> gPut x
     where
-      tag = fromInteger @Word8 (natVal' (proxy# @n))
+      tag = fromInteger @Word8 (TypeLits.natVal' (proxy# @n))
 
 instance (GSerializeGet f, KnownNat n) => GSerializeGetSum n (G.C1 c f) where
   gGetSum# tag _
@@ -226,7 +233,7 @@ instance (GSerializeGet f, KnownNat n) => GSerializeGetSum n (G.C1 c f) where
     | W# tag > cur = Exception.throw (InvalidSumTag cur (W# tag))
     | otherwise = error "Implementation error"
     where
-      cur = fromInteger @Word (natVal' (proxy# @n))
+      cur = fromInteger @Word (TypeLits.natVal' (proxy# @n))
 
 type SumArity :: (Type -> Type) -> Nat
 type family SumArity a where
@@ -238,7 +245,7 @@ type FitsInByte n = FitsInByteResult (n <=? 255)
 type FitsInByteResult :: Bool -> Constraint
 type family FitsInByteResult b where
   FitsInByteResult True = ()
-  FitsInByteResult False = TypeError (Text "Generic deriving of Serialize instances can only be used on datatypes with fewer than 256 constructors.")
+  FitsInByteResult False = TypeLits.TypeError (TypeLits.Text "Generic deriving of Serialize instances can only be used on datatypes with fewer than 256 constructors.")
 
 instance ByteOrder.FixedOrdering b => Serialize (ByteOrder.Fixed b Int) where
   size# _ = sizeOf## @Int
@@ -295,13 +302,57 @@ instance Serialize a => Serialize [a] where
     sizeOf## @Word32 +# case constSize## @a of
       ConstSize# sz# -> unI# (length xs) *# sz#
       _ -> unI# $ sum $ size <$> xs
-
   put xs = putFoldableWith (length xs) xs
-
   get = do
     size <- get @Word32
     xs <- foldM (\xs _ -> do x <- get; pure $ x : xs) [] [1 .. size]
-    pure $ reverse xs
+    pure $! reverse xs
+
+instance Serialize Primitive.ByteArray where
+  size# bs = unI# $ Primitive.sizeofByteArray bs
+  {-# INLINE size# #-}
+  put bs = putByteArray 0 (Primitive.sizeofByteArray bs) bs
+  get = getByteArray
+
+instance Serialize Text where
+  size# (Data.Text.Internal.Text _arr _off (I# len#)) = sizeOf## @Word32 +# len#
+  {-# INLINE size# #-}
+  put (Data.Text.Internal.Text (Data.Text.Array.ByteArray (Primitive.ByteArray -> arr)) off len) =
+    putByteArray off len arr
+  get = do
+    size <- fromIntegral @Word32 @Int <$> get
+    unsafeWithGet size \arr i -> do
+      -- can't use getByteArray here because we need to ensure it is UTF-8
+      -- wait for text to allow decoding UTF-8 from ByteArray
+      pure $! Text.Encoding.decodeUtf8 $! pinnedToByteString i size arr
+
+instance Serialize ByteString where
+  size# bs = sizeOf## @Word32 +# unI# (B.length bs)
+  {-# INLINE size# #-}
+  put (B.Internal.PS fp off len) =
+    put (fromIntegral @Int @Word32 len) <> unsafeWithPut len \marr i ->
+      Foreign.withForeignPtr fp \p -> do
+        let p' :: Primitive.Ptr Word8 = p `Foreign.plusPtr` off
+        Primitive.copyPtrToMutableByteArray marr i p' len
+  get = do
+    size <- fromIntegral @Word32 @Int <$> get
+    unsafeWithGet size \arr i ->
+      pure $! B.copy $! pinnedToByteString i size arr
+
+putByteArray :: Int -> Int -> Primitive.ByteArray -> Put
+putByteArray off len arr =
+  put (fromIntegral @Int @Word32 len) <> unsafeWithPut len \marr i ->
+    Primitive.copyByteArray marr i arr off len
+{-# INLINE putByteArray #-}
+
+getByteArray :: Get Primitive.ByteArray
+getByteArray = do
+  len <- fromIntegral @Word32 @Int <$> get
+  unsafeWithGet len \arr i -> do
+    marr <- Primitive.newByteArray len
+    Primitive.copyByteArray marr 0 arr i len
+    Primitive.unsafeFreezeByteArray marr
+{-# INLINE getByteArray #-}
 
 putFoldableWith :: (Serialize a, Foldable f) => Int -> f a -> Put
 putFoldableWith !size xs = put (fromIntegral @Int @Word32 size) <> foldMap put xs
@@ -315,22 +366,12 @@ unsafeReinterpretCast x = runST $ do
   Primitive.readPrimArray marr' 0
 {-# INLINE unsafeReinterpretCast #-}
 
-putPrim :: forall a. (Prim a, PrimUnaligned a) => a -> Put
-putPrim x = Put# \pe# ps@(PS# i#) s# -> case writePE# pe# i# x s# of
-  s# -> PR# s# (incPS# (sizeOf## @a) ps)
-{-# INLINE putPrim #-}
-
-getPrim :: forall a. (Prim a, PrimUnaligned a) => Get a
-getPrim = Get# \ge# gs@(GS# i#) s# -> case indexGE# i# ge# of
-  !x -> GR# s# (incGS# (sizeOf## @a) gs) x
-{-# INLINE getPrim #-}
-
 encodeIO :: Serialize a => a -> IO ByteString
 encodeIO x = do
   marr@(Primitive.MutableByteArray marr#) <- Primitive.newPinnedByteArray sz
   IO \s# -> case runPut# (put x) (PE# marr# (unI# sz)) (PS# 0#) s# of
     PR# s# _ -> (# s#, () #)
-  pinnedToByteString <$!> Primitive.unsafeFreezeByteArray marr
+  pinnedToByteString 0 sz <$!> Primitive.unsafeFreezeByteArray marr
   where
     sz = size x
 

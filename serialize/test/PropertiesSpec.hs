@@ -10,6 +10,9 @@ import Serialize
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
+import Test.QuickCheck.Instances ()
+import Data.Text (Text)
+import Data.ByteString (ByteString)
 
 serializeProp :: forall a. (Serialize a, Eq a, Show a, Arbitrary a) => Property
 serializeProp = property \(x :: a) -> decode' (encode x) === x
@@ -21,7 +24,10 @@ props =
     serializeProp @(Maybe (Either (Maybe Int) (Maybe Int))),
     serializeProp @[Int],
     serializeProp @[Either Int16 Int32],
-    serializeProp @[(Int, Int64, Either Word8 Word8)]
+    serializeProp @[(Int, Int64, Either Word8 Word8)],
+    serializeProp @Text,
+    serializeProp @ByteString,
+    serializeProp @[Either Text ByteString]
   ]
 
 spec :: Spec

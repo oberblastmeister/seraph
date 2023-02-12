@@ -1,7 +1,8 @@
 module Serialize.Internal.Put where
 
 import Data.Primitive (MutableByteArray#, Prim)
-import Data.Primitive.ByteArray.Unaligned (PrimUnaligned (..))
+import Data.Primitive qualified as Primitive
+import Data.Primitive.ByteArray.Unaligned (PrimUnaligned (..), writeUnalignedByteArray)
 import Serialize.Internal.Exts
 import Serialize.Internal.Util
 
@@ -54,3 +55,14 @@ instance Semigroup Put where
 instance Monoid Put where
   mempty = Put# \_marr# ps# s# -> PR# s# ps#
   {-# INLINE mempty #-}
+
+unsafeWithPut :: Int -> (Primitive.MutableByteArray RealWorld -> Int -> IO ()) -> Put
+unsafeWithPut (I# o#) f = Put# \(PE# marr# l#) ps@(PS# i#) s# -> case i# +# o# ># l# of
+  1# -> error "Index out of bounds"
+  _ -> case runIO# (f (Primitive.MutableByteArray marr#) (I# i#)) s# of
+    (# s#, () #) -> PR# s# (incPS# o# ps)
+{-# INLINE unsafeWithPut #-}
+
+putPrim :: forall a. (Prim a, PrimUnaligned a) => a -> Put
+putPrim x = unsafeWithPut (sizeOf' @a) \marr i -> writeUnalignedByteArray marr i x
+{-# INLINE putPrim #-}
