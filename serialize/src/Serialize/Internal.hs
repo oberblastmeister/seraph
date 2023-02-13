@@ -17,6 +17,7 @@ import Data.ByteString qualified as B
 import Data.ByteString.Internal qualified as B.Internal
 import Data.ByteString.Short (ShortByteString)
 import Data.ByteString.Short qualified as SBS
+import Data.Char qualified as Char
 import Data.Foldable (foldMap', foldlM)
 import Data.Functor ((<&>))
 import Data.HashMap.Internal qualified as HashMap.Internal
@@ -30,7 +31,7 @@ import Data.IntSet (IntSet)
 import Data.IntSet qualified as IntSet
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Monoid (Dual (..), Product (..), Sum (..))
+import Data.Monoid (Sum (..))
 import Data.Primitive (sizeOf)
 import Data.Primitive qualified as Primitive
 import Data.Sequence (Seq)
@@ -102,7 +103,7 @@ class KnownBool (IsConstSize a) => Serialize a where
   put = gPut . G.from
 
   default get :: (Generic a, GSerializeGet (G.Rep a)) => Get a
-  get = G.to <$!> gGet
+  get = G.to <$> gGet
 
 class GSerializeSize f where
   gSize# :: f a -> Int
@@ -185,7 +186,7 @@ instance (GSerializePut f, GSerializePut g) => GSerializePut (f G.:*: g) where
   {-# INLINE gPut #-}
 
 instance (GSerializeGet f, GSerializeGet g) => GSerializeGet (f G.:*: g) where
-  gGet = (G.:*:) <$!> gGet <*> gGet
+  gGet = (G.:*:) <$> gGet <*> gGet
   {-# INLINE gGet #-}
 
 instance (FitsInByte (SumArity (f G.:+: g)), GSerializeSizeSum 0 (f G.:+: g)) => GSerializeSize (f G.:+: g) where
@@ -199,7 +200,7 @@ instance (FitsInByte (SumArity (f G.:+: g)), GSerializePutSum 0 (f G.:+: g)) => 
 instance (FitsInByte (SumArity (f G.:+: g)), GSerializeGetSum 0 (f G.:+: g)) => GSerializeGet (f G.:+: g) where
   gGet = do
     tag <- get @Word8
-    gGetSum# (unW# (fromIntegral @Word8 @Word tag)) (proxy# @0)
+    gGetSum# tag (proxy# @0)
   {-# INLINE gGet #-}
 
 class KnownNat n => GSerializeSizeSum n f where
@@ -209,7 +210,7 @@ class KnownNat n => GSerializePutSum n f where
   gPutSum# :: f a -> Proxy# n -> Put
 
 class KnownNat n => GSerializeGetSum n f where
-  gGetSum# :: Word# -> Proxy# n -> Get (f a)
+  gGetSum# :: Word8 -> Proxy# n -> Get (f a)
 
 instance (GSerializeSizeSum n f, GSerializeSizeSum (n + SumArity f) g) => GSerializeSizeSum n (f G.:+: g) where
   gSizeSum# (G.L1 l) _ = gSizeSum# l (proxy# @n)
@@ -222,9 +223,9 @@ instance (GSerializePutSum n f, GSerializePutSum (n + SumArity f) g) => GSeriali
   {-# INLINE gPutSum# #-}
 
 instance (GSerializeGetSum n f, GSerializeGetSum (n + SumArity f) g) => GSerializeGetSum n (f G.:+: g) where
-  gGetSum# tag# p#
-    | W# tag# < sizeL = G.L1 <$!> gGetSum# tag# p#
-    | otherwise = G.R1 <$!> gGetSum# tag# (proxy# @(n + SumArity f))
+  gGetSum# tag p#
+    | tag < sizeL = G.L1 <$> gGetSum# tag p#
+    | otherwise = G.R1 <$> gGetSum# tag (proxy# @(n + SumArity f))
     where
       sizeL = fromInteger (TypeLits.natVal' (proxy# @(n + SumArity f)))
   {-# INLINE gGetSum# #-}
@@ -237,14 +238,16 @@ instance (GSerializePut f, KnownNat n) => GSerializePutSum n (G.C1 c f) where
   gPutSum# x _ = put tag <> gPut x
     where
       tag = fromInteger @Word8 (TypeLits.natVal' (proxy# @n))
+  {-# INLINE gPutSum# #-}
 
 instance (GSerializeGet f, KnownNat n) => GSerializeGetSum n (G.C1 c f) where
   gGetSum# tag _
-    | W# tag == cur = gGet
-    | W# tag > cur = Exception.throw (InvalidSumTag cur (W# tag))
+    | tag == cur = gGet
+    | tag > cur = Exception.throw (InvalidSumTag (fromIntegral cur) (fromIntegral tag))
     | otherwise = error "Implementation error"
     where
-      cur = fromInteger @Word (TypeLits.natVal' (proxy# @n))
+      cur = fromInteger @Word8 (TypeLits.natVal' (proxy# @n))
+  {-# INLINE gGetSum# #-}
 
 type SumArity :: (Type -> Type) -> Nat
 type family SumArity a where
@@ -276,6 +279,7 @@ instance ByteOrder.FixedOrdering b => Serialize (ByteOrder.Fixed b Word) where
   {-# INLINE put #-}
   {-# INLINE get #-}
 
+-- TODO: optimize this so that we don't have to do ffi call when same endianness
 instance ByteOrder.FixedOrdering b => Serialize (ByteOrder.Fixed b Float) where
   type IsConstSize _ = True
   size = sizeOf' @Word32
@@ -290,6 +294,15 @@ instance ByteOrder.FixedOrdering b => Serialize (ByteOrder.Fixed b Double) where
   size = sizeOf' @Word64
   put = put . ByteOrder.Fixed @b #. GHC.Float.castDoubleToWord64 .# ByteOrder.getFixed @b
   get = (ByteOrder.Fixed @b #. GHC.Float.castWord64ToDouble .# ByteOrder.getFixed @b) <$!> get
+  {-# INLINE size #-}
+  {-# INLINE put #-}
+  {-# INLINE get #-}
+
+instance Serialize Char where
+  type IsConstSize _ = True
+  size = size @Int
+  put = put . Char.ord
+  get = Char.chr <$!> get
   {-# INLINE size #-}
   {-# INLINE put #-}
   {-# INLINE get #-}

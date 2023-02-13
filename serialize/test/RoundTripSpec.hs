@@ -14,13 +14,13 @@ import Data.Map.Strict (Map)
 import Data.Primitive (ByteArray)
 import Data.Sequence (Seq)
 import Data.Text (Text)
+import Data.Tree (Tree)
 import Data.Word (Word8)
 import Serialize
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck
 import Test.QuickCheck.Instances ()
-import Data.Tree (Tree)
 
 serializeProp :: forall a. (Serialize a, Eq a, Show a, Arbitrary a) => Property
 serializeProp = property \(x :: a) -> decode' (encode x) === x

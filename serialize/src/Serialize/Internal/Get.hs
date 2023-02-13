@@ -70,7 +70,7 @@ instance Monad Get where
 
 data GetException
   = IndexOutOfBounds !Int !Int
-  | InvalidSumTag !Word !Word
+  | InvalidSumTag !Int !Int
   deriving (Eq)
 
 instance Show GetException where

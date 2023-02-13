@@ -79,6 +79,7 @@ common common-options
     -Werror=incomplete-record-updates
     -Wcpp-undef
     -Widentities
+    -O2
   build-depends:
     base >= 4.12 && <5,
     bytestring,
@@ -131,3 +132,21 @@ test-suite serialize-test
     hspec-discover:hspec-discover,
   if impl(ghc >= 9.2.2)
     ghc-options: -fcheck-prim-bounds
+
+benchmark bench
+  import: common-options, rtsopts
+  type: exitcode-stdio-1.0
+  hs-source-dirs: bench
+  main-is: Main.hs
+  other-modules:
+    Dataset
+  ghc-options: -O2
+  build-depends:
+    QuickCheck,
+    deepseq,
+    criterion,
+    datasets,
+    flat,
+    serialize,
+    store,
+    req,
