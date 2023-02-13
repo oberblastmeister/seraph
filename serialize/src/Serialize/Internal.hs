@@ -24,6 +24,8 @@ import Data.IntMap (IntMap)
 import Data.IntMap qualified as IntMap
 import Data.IntSet (IntSet)
 import Data.IntSet qualified as IntSet
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 import Data.Monoid (Dual (..), Product (..), Sum (..))
 import Data.Primitive (sizeOf)
 import Data.Primitive qualified as Primitive
@@ -364,22 +366,27 @@ instance Serialize a => Serialize (Seq a) where
 instance Serialize IntSet where
   size is = size @Int + (size @Int) * (IntSet.size is)
   put is =
-    put (fromIntegral @Int @Word32 $ IntSet.size is)
+    putSize (IntSet.size is)
       <> IntSet.foldr (mappend . put) mempty is
   get = foldGet IntSet.insert IntSet.empty
 
 instance Serialize a => Serialize (IntMap a) where
   size xs =
     size @Int + case isPrim @a of
-      STrue -> (size @Int + size @a) * (IntMap.size xs)
+      STrue -> (size @Int + size @a) * IntMap.size xs
       SFalse -> getSum $ foldMap' (\x -> Sum (size @Int + size x)) xs
   put im =
-    put (fromIntegral @Int @Word32 (IntMap.size im))
+    putSize (IntMap.size im)
       <> IntMap.foldMapWithKey (\i x -> put i <> put x) im
   get = foldGet2 IntMap.insert IntMap.empty
 
--- instance (Serialize a, Serialize b) => Serialize (Map a b) where
---   size# xs = sizeOf## @Word32
+instance (Ord a, Serialize a, Serialize b) => Serialize (Map a b) where
+  size m =
+    size @Int + case (isPrim @a, isPrim @b) of
+      (STrue, STrue) -> (size @a + size @b) * Map.size m
+      (_, _) -> Map.foldlWithKey' (\s k x -> s + theSize @a k + theSize @b x) 0 m
+  put m = put @Int (Map.size m) <> Map.foldMapWithKey (\k x -> put k <> put x) m
+  get = foldGet2 Map.insert Map.empty
 
 instance Serialize Primitive.ByteArray where
   size = Primitive.sizeofByteArray
@@ -393,7 +400,7 @@ instance Serialize Text where
   put (Data.Text.Internal.Text (Data.Text.Array.ByteArray (Primitive.ByteArray -> arr)) off len) =
     putByteArray off len arr
   get = do
-    size <- fromIntegral @Word32 @Int <$!> get
+    size <- getSize
     unsafeWithGet size \arr i -> do
       -- can't use getByteArray here because we need to ensure it is UTF-8
       -- wait for text to allow decoding UTF-8 from ByteArray
@@ -414,24 +421,24 @@ instance Serialize ByteString where
   size bs = size @Int + (B.length bs)
   {-# INLINE size #-}
   put (B.Internal.PS fp off len) =
-    put (fromIntegral @Int @Word32 len) <> unsafeWithPut len \marr i ->
+    putSize len <> unsafeWithPut len \marr i ->
       Foreign.withForeignPtr fp \p -> do
         let p' :: Primitive.Ptr Word8 = p `Foreign.plusPtr` off
         Primitive.copyPtrToMutableByteArray marr i p' len
   get = do
-    size <- fromIntegral @Word32 @Int <$!> get
+    size <- getSize
     unsafeWithGet size \arr i ->
       pure $! B.copy $! pinnedToByteString i size arr
 
 putByteArray :: Int -> Int -> Primitive.ByteArray -> Put
 putByteArray off len arr =
-  put (fromIntegral @Int @Word32 len) <> unsafeWithPut len \marr i ->
+  putSize len <> unsafeWithPut len \marr i ->
     Primitive.copyByteArray marr i arr off len
 {-# INLINE putByteArray #-}
 
 getByteArray :: Get Primitive.ByteArray
 getByteArray = do
-  len <- fromIntegral @Word32 @Int <$!> get
+  len <- getSize
   unsafeWithGet len \arr i -> do
     marr <- Primitive.newByteArray len
     Primitive.copyByteArray marr 0 arr i len
@@ -445,17 +452,16 @@ sizeFoldable xs =
     SFalse -> getSum $ foldMap' (Sum #. size) xs
 {-# INLINE sizeFoldable #-}
 
--- sizeMap :: forall a b m. (Serialize a, Serialize b) => (m -> [(a, b)]) -> (m -> Int) -> m -> Int#
--- sizeMap toList length m =
---   sizeOf## @Word32 +# case (# constSize## @a, constSize## @b #) of
---     (# ConstSize# sz#, ConstSize# sz'# #) -> (sz# +# sz'#) *# unI# (length m)
---     (# VarSize#, ConstSize# sz# #) -> foldMap' toList m
--- sizeBifoldable :: forall a b f. (Serialize a, Serialize b, Bifoldable f, Foldable (f a)) => f a -> Int#
--- sizeBifoldable xs =
--- {-# INLINE sizeBifoldable #-}
+putSize :: Int -> Put
+putSize = put . fromIntegral @Int @Word32
+{-# INLINE putSize #-}
+
+getSize :: Get Int
+getSize = fromIntegral @Word32 @Int <$!> get
+{-# INLINE getSize #-}
 
 putFoldableWith :: (Serialize a, Foldable f) => Int -> f a -> Put
-putFoldableWith len xs = put (fromIntegral @Int @Word32 len) <> foldMap put xs
+putFoldableWith len xs = putSize len <> foldMap put xs
 {-# INLINE putFoldableWith #-}
 
 putFoldable :: (Serialize a, Foldable f) => f a -> Put
@@ -467,20 +473,18 @@ putBifoldable xs = putBifoldableWith (length xs) xs
 {-# INLINE putBifoldable #-}
 
 putBifoldableWith :: (Serialize a, Serialize b, Bifoldable f) => Int -> f a b -> Put
-putBifoldableWith len xs =
-  put (fromIntegral @Int @Word32 len)
-    <> bifoldMap put put xs
+putBifoldableWith len xs = putSize len <> bifoldMap put put xs
 {-# INLINE putBifoldableWith #-}
 
 foldGet :: (Serialize a) => (a -> b -> b) -> b -> Get b
 foldGet f z = do
-  size <- fromIntegral @Word32 @Int <$!> get
+  size <- getSize
   foldlM (\xs _ -> do x <- get; pure $! f x xs) z [1 .. size]
 {-# INLINE foldGet #-}
 
 foldGet2 :: (Serialize a, Serialize b) => (a -> b -> c -> c) -> c -> Get c
 foldGet2 f z = do
-  size <- fromIntegral @Word32 @Int <$!> get
+  size <- getSize
   foldlM (\xs _ -> do x <- get; y <- get; pure $! f x y xs) z [1 .. size]
 {-# INLINE foldGet2 #-}
 
