@@ -19,6 +19,10 @@ import Data.ByteString.Short (ShortByteString)
 import Data.ByteString.Short qualified as SBS
 import Data.Foldable (foldMap', foldlM)
 import Data.Functor ((<&>))
+import Data.HashMap.Internal qualified as HashMap.Internal
+import Data.HashMap.Strict (HashMap)
+import Data.HashMap.Strict qualified as HashMap
+import Data.Hashable (Hashable)
 import Data.Int (Int16, Int32, Int64, Int8)
 import Data.IntMap (IntMap)
 import Data.IntMap qualified as IntMap
@@ -364,7 +368,7 @@ instance Serialize a => Serialize (Seq a) where
   get = foldGet (flip (Seq.|>)) Seq.empty
 
 instance Serialize IntSet where
-  size is = size @Int + (size @Int) * (IntSet.size is)
+  size is = size @Int + size @Int * IntSet.size is
   put is =
     putSize (IntSet.size is)
       <> IntSet.foldr (mappend . put) mempty is
@@ -385,11 +389,19 @@ instance (Ord a, Serialize a, Serialize b) => Serialize (Map a b) where
     size @Int + case (isPrim @a, isPrim @b) of
       (STrue, STrue) -> (size @a + size @b) * Map.size m
       (_, _) -> Map.foldlWithKey' (\s k x -> s + theSize @a k + theSize @b x) 0 m
-  put m = put @Int (Map.size m) <> Map.foldMapWithKey (\k x -> put k <> put x) m
+  put m = putSize (Map.size m) <> Map.foldMapWithKey (\k x -> put k <> put x) m
   get = foldGet2 Map.insert Map.empty
 
+instance (Hashable a, Serialize a, Serialize b) => Serialize (HashMap a b) where
+  size m =
+    size @Int + case (isPrim @a, isPrim @b) of
+      (STrue, STrue) -> (size @a + size @b) * HashMap.size m
+      (_, _) -> HashMap.foldlWithKey' (\s k x -> s + theSize @a k + theSize @b x) 0 m
+  put m = put @Int (HashMap.size m) <> HashMap.foldMapWithKey (\k x -> put k <> put x) m
+  get = foldGet2 HashMap.Internal.insert HashMap.empty
+
 instance Serialize Primitive.ByteArray where
-  size = Primitive.sizeofByteArray
+  size bs = size @Int + Primitive.sizeofByteArray bs
   {-# INLINE size #-}
   put bs = putByteArray 0 (Primitive.sizeofByteArray bs) bs
   get = getByteArray
@@ -453,11 +465,11 @@ sizeFoldable xs =
 {-# INLINE sizeFoldable #-}
 
 putSize :: Int -> Put
-putSize = put . fromIntegral @Int @Word32
+putSize = put
 {-# INLINE putSize #-}
 
 getSize :: Get Int
-getSize = fromIntegral @Word32 @Int <$!> get
+getSize = get
 {-# INLINE getSize #-}
 
 putFoldableWith :: (Serialize a, Foldable f) => Int -> f a -> Put
