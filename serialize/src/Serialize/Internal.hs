@@ -2,7 +2,7 @@
 {-# LANGUAGE CPP #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE UndecidableInstances #-}
-
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# HLINT ignore "Redundant bracket" #-}
 
 module Serialize.Internal where
@@ -392,8 +392,13 @@ instance Serialize Text where
 instance Serialize ShortByteString where
   size# bs = sizeOf## @Word32 +# unI# (SBS.length bs)
   {-# INLINE size# #-}
+#if MIN_VERSION_bytestring(0,11,1)
   put (SBS.SBS arr#) = put (Primitive.ByteArray arr#)
   get = (\(Primitive.ByteArray arr#) -> SBS.SBS arr#) <$> get
+#else
+  put = put . SBS.fromShort
+  get = SBS.toShort <$> get
+#endif
 
 instance Serialize ByteString where
   size# bs = sizeOf## @Word32 +# unI# (B.length bs)
