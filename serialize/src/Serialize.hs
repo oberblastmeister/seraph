@@ -5,7 +5,6 @@ module Serialize
     putFoldable,
     sizeFoldable,
     foldGet,
-    gConstSize,
     encode,
     encodeIO,
     decodeIO,

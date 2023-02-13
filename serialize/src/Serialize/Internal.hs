@@ -3,7 +3,9 @@
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
 {-# HLINT ignore "Redundant bracket" #-}
+{-# HLINT ignore "Use if" #-}
 
 module Serialize.Internal where
 
@@ -16,13 +18,14 @@ import Data.ByteString.Internal qualified as B.Internal
 import Data.ByteString.Short (ShortByteString)
 import Data.ByteString.Short qualified as SBS
 import Data.Foldable (foldMap', foldlM)
+import Data.Functor ((<&>))
 import Data.Int (Int16, Int32, Int64, Int8)
 import Data.IntMap (IntMap)
 import Data.IntMap qualified as IntMap
 import Data.IntSet (IntSet)
 import Data.IntSet qualified as IntSet
 import Data.Monoid (Dual (..), Product (..), Sum (..))
-import Data.Primitive (sizeOf#)
+import Data.Primitive (sizeOf)
 import Data.Primitive qualified as Primitive
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
@@ -48,38 +51,46 @@ import System.IO.Unsafe qualified as IO.Unsafe
 
 #include "serialize.h"
 
-type ConstSize# = (# Int# | (# #) #)
+data SBool :: Bool -> Type where
+  STrue :: SBool True
+  SFalse :: SBool False
 
-pattern ConstSize# :: Int# -> ConstSize#
-pattern ConstSize# i# = (# i# | #)
+class KnownBool (b :: Bool) where
+  boolSing :: SBool b
 
-pattern VarSize# :: ConstSize#
-pattern VarSize# = (# | (# #) #)
+instance KnownBool True where
+  boolSing = STrue
+  {-# INLINE boolSing #-}
 
-{-# COMPLETE ConstSize#, VarSize# #-}
+instance KnownBool False where
+  boolSing = SFalse
+  {-# INLINE boolSing #-}
 
-(<>#) :: ConstSize# -> ConstSize# -> ConstSize#
-ConstSize# i# <># ConstSize# j# = ConstSize# (i# +# j#)
-_ <># _ = VarSize#
-{-# INLINE (<>#) #-}
+isPrim :: forall a. (Serialize a) => SBool (IsConstSize a)
+isPrim = boolSing @(IsConstSize a)
+{-# INLINE isPrim #-}
 
-constSizeAdd# :: Int# -> ConstSize# -> ConstSize#
-constSizeAdd# i# (ConstSize# j#) = ConstSize# (i# +# j#)
-constSizeAdd# _ VarSize# = VarSize#
-{-# INLINE constSizeAdd# #-}
+type family ConstSize b a = r | r -> b where
+  ConstSize True _ = Int
+  ConstSize False a = a -> Int
 
-class Serialize a where
-  size# :: a -> Int#
-  constSize# :: Proxy# a -> ConstSize#
+class KnownBool (IsConstSize a) => Serialize a where
+  type IsConstSize a :: Bool
+  type IsConstSize a = False
+
+  size :: ConstSize (IsConstSize a) a
+  theSize :: a -> Int
   put :: a -> Put
   get :: Get a
 
-  default size# :: (Generic a, GSerializeSize (G.Rep a)) => a -> Int#
-  size# x = gSize# (G.from x)
-  {-# INLINE size# #-}
+  default size :: (Generic a, GSerializeSize (G.Rep a), IsConstSize a ~ False) => ConstSize (IsConstSize a) a
+  size x = gSize# (G.from x)
+  {-# INLINE size #-}
 
-  constSize# _ = VarSize#
-  {-# INLINE constSize# #-}
+  theSize x = case isPrim @a of
+    STrue -> size @a
+    SFalse -> size x
+  {-# INLINE theSize #-}
 
   default put :: (Generic a, GSerializePut (G.Rep a)) => a -> Put
   put = gPut . G.from
@@ -87,33 +98,11 @@ class Serialize a where
   default get :: (Generic a, GSerializeGet (G.Rep a)) => Get a
   get = G.to <$!> gGet
 
-gConstSize :: forall a. GSerializeConstSize (G.Rep a) => Proxy# a -> ConstSize#
-gConstSize _ = gConstSize# (proxy# @((G.Rep a) _))
-{-# INLINE gConstSize #-}
-
-primConstSize# :: forall a. Serialize a => Int#
-primConstSize# = case constSize# (proxy# @a) of
-  ConstSize# i# -> i#
-  VarSize# -> error "Was not ConstSize#"
-{-# INLINE primConstSize# #-}
-
-primConstSize :: forall a. Serialize a => Int
-primConstSize = I# (primConstSize# @a)
-{-# INLINE primConstSize #-}
-
-constSize## :: forall a. Serialize a => ConstSize#
-constSize## = constSize# (proxy# @a)
-{-# INLINE constSize## #-}
-
-size :: Serialize a => a -> Int
-size x = I# (size# x)
-{-# INLINE size #-}
-
 class GSerializeSize f where
-  gSize# :: f a -> Int#
+  gSize# :: f a -> Int
 
 class GSerializeConstSize f where
-  gConstSize# :: Proxy# (f a) -> ConstSize#
+  gConstSize# :: Proxy# (f a) -> Int
 
 class GSerializePut f where
   gPut :: f a -> Put
@@ -138,11 +127,11 @@ instance GSerializeGet f => GSerializeGet (G.M1 i c f) where
   {-# INLINE gGet #-}
 
 instance Serialize f => GSerializeSize (G.K1 i f) where
-  gSize# (G.K1 x) = size# x
+  gSize# (G.K1 x) = theSize x
   {-# INLINE gSize# #-}
 
-instance Serialize f => GSerializeConstSize (G.K1 i f) where
-  gConstSize# _ = constSize# (proxy# @f)
+instance (Serialize a, IsConstSize a ~ True) => GSerializeConstSize (G.K1 i a) where
+  gConstSize# _ = size @a
   {-# INLINE gConstSize# #-}
 
 instance Serialize f => GSerializePut (G.K1 i f) where
@@ -154,11 +143,11 @@ instance Serialize f => GSerializeGet (G.K1 i f) where
   {-# INLINE gGet #-}
 
 instance GSerializeSize G.U1 where
-  gSize# G.U1 = 0#
+  gSize# G.U1 = 0
   {-# INLINE gSize# #-}
 
 instance GSerializeConstSize G.U1 where
-  gConstSize# _ = ConstSize# 0#
+  gConstSize# _ = 0
   {-# INLINE gConstSize# #-}
 
 instance GSerializePut G.U1 where
@@ -178,11 +167,11 @@ instance GSerializePut G.V1 where
   {-# INLINE gPut #-}
 
 instance (GSerializeSize f, GSerializeSize g) => GSerializeSize (f G.:*: g) where
-  gSize# (x G.:*: y) = gSize# x +# gSize# y
+  gSize# (x G.:*: y) = gSize# x + gSize# y
   {-# INLINE gSize# #-}
 
 instance (GSerializeConstSize f, GSerializeConstSize g) => GSerializeConstSize (f G.:*: g) where
-  gConstSize# _ = gConstSize# (proxy# @(f _)) <># gConstSize# (proxy# @(g _))
+  gConstSize# _ = gConstSize# (proxy# @(f _)) + gConstSize# (proxy# @(g _))
   {-# INLINE gConstSize# #-}
 
 instance (GSerializePut f, GSerializePut g) => GSerializePut (f G.:*: g) where
@@ -194,7 +183,7 @@ instance (GSerializeGet f, GSerializeGet g) => GSerializeGet (f G.:*: g) where
   {-# INLINE gGet #-}
 
 instance (FitsInByte (SumArity (f G.:+: g)), GSerializeSizeSum 0 (f G.:+: g)) => GSerializeSize (f G.:+: g) where
-  gSize# x = sizeOf## @Word8 +# gSizeSum# x (proxy# @0)
+  gSize# x = size @Word8 + gSizeSum# x (proxy# @0)
   {-# INLINE gSize# #-}
 
 instance (FitsInByte (SumArity (f G.:+: g)), GSerializePutSum 0 (f G.:+: g)) => GSerializePut (f G.:+: g) where
@@ -207,12 +196,8 @@ instance (FitsInByte (SumArity (f G.:+: g)), GSerializeGetSum 0 (f G.:+: g)) => 
     gGetSum# (unW# (fromIntegral @Word8 @Word tag)) (proxy# @0)
   {-# INLINE gGet #-}
 
-instance GSerializeConstSize (f G.:+: g) where
-  gConstSize# _ = VarSize#
-  {-# INLINE gConstSize# #-}
-
 class KnownNat n => GSerializeSizeSum n f where
-  gSizeSum# :: f a -> Proxy# n -> Int#
+  gSizeSum# :: f a -> Proxy# n -> Int
 
 class KnownNat n => GSerializePutSum n f where
   gPutSum# :: f a -> Proxy# n -> Put
@@ -268,42 +253,38 @@ type family FitsInByteResult b where
   FitsInByteResult False = TypeLits.TypeError (TypeLits.Text "Generic deriving of Serialize instances can only be used on datatypes with fewer than 256 constructors.")
 
 instance ByteOrder.FixedOrdering b => Serialize (ByteOrder.Fixed b Int) where
-  size# _ = sizeOf## @Int64
-  constSize# _ = ConstSize# (sizeOf## @Int64)
+  type IsConstSize _ = True
+  size = sizeOf' @Int64
   put = put . fromIntegral @(ByteOrder.Fixed b Int) @(ByteOrder.Fixed b Int64)
   get = fromIntegral @(ByteOrder.Fixed b Int64) @(ByteOrder.Fixed b Int) <$!> get
-  {-# INLINE size# #-}
-  {-# INLINE constSize# #-}
+  {-# INLINE size #-}
   {-# INLINE put #-}
   {-# INLINE get #-}
 
 instance ByteOrder.FixedOrdering b => Serialize (ByteOrder.Fixed b Word) where
-  size# _ = sizeOf## @Word64
-  constSize# _ = ConstSize# (sizeOf## @Word64)
+  type IsConstSize _ = True
+  size = sizeOf' @Word64
   put = put . fromIntegral @(ByteOrder.Fixed b Word) @(ByteOrder.Fixed b Word64)
   get = fromIntegral @(ByteOrder.Fixed b Word64) @(ByteOrder.Fixed b Word) <$!> get
-  {-# INLINE size# #-}
-  {-# INLINE constSize# #-}
+  {-# INLINE size #-}
   {-# INLINE put #-}
   {-# INLINE get #-}
 
 instance ByteOrder.FixedOrdering b => Serialize (ByteOrder.Fixed b Float) where
-  size# _ = sizeOf## @Word32
-  constSize# _ = ConstSize# (sizeOf## @Word32)
+  type IsConstSize _ = True
+  size = sizeOf' @Word32
   put = put . ByteOrder.Fixed @b #. GHC.Float.castFloatToWord32 .# ByteOrder.getFixed @b
   get = (ByteOrder.Fixed @b #. GHC.Float.castWord32ToFloat .# ByteOrder.getFixed @b) <$!> get
-  {-# INLINE size# #-}
-  {-# INLINE constSize# #-}
+  {-# INLINE size #-}
   {-# INLINE put #-}
   {-# INLINE get #-}
 
 instance ByteOrder.FixedOrdering b => Serialize (ByteOrder.Fixed b Double) where
-  size# _ = sizeOf## @Word64
-  constSize# _ = ConstSize# (sizeOf## @Word64)
+  type IsConstSize _ = True
+  size = sizeOf' @Word64
   put = put . ByteOrder.Fixed @b #. GHC.Float.castDoubleToWord64 .# ByteOrder.getFixed @b
   get = (ByteOrder.Fixed @b #. GHC.Float.castWord64ToDouble .# ByteOrder.getFixed @b) <$!> get
-  {-# INLINE size# #-}
-  {-# INLINE constSize# #-}
+  {-# INLINE size #-}
   {-# INLINE put #-}
   {-# INLINE get #-}
 
@@ -321,13 +302,42 @@ deriveSerializePrimLE (Int)
 
 deriveSerializePrimLE (Float)
 deriveSerializePrimLE (Double)
-deriveSerializeNewtype (Dual)
-deriveSerializeNewtype (Sum)
-deriveSerializeNewtype (Product)
 
-instance Serialize Bool
+-- deriveSerializeNewtype (Dual)
+-- deriveSerializeNewtype (Sum)
+-- deriveSerializeNewtype (Product)
 
-instance Serialize Ordering
+instance Serialize Bool where
+  type IsConstSize _ = True
+  size = size @Word8
+  put x = put @Word8 $ case x of
+    True -> 0
+    False -> 1
+  get =
+    get @Word8 <&> \case
+      0 -> True
+      1 -> False
+      _ -> undefined
+  {-# INLINE size #-}
+  {-# INLINE put #-}
+  {-# INLINE get #-}
+
+instance Serialize Ordering where
+  type IsConstSize _ = True
+  size = size @Word8
+  put o = put @Word8 $ case o of
+    LT -> 0
+    EQ -> 1
+    GT -> 2
+  get =
+    get @Word8 <&> \case
+      0 -> LT
+      1 -> EQ
+      2 -> GT
+      _ -> undefined
+  {-# INLINE size #-}
+  {-# INLINE put #-}
+  {-# INLINE get #-}
 
 instance Serialize a => Serialize (Tree a)
 
@@ -342,27 +352,27 @@ instance Serialize a => Serialize (Maybe a)
 instance (Serialize a, Serialize b) => Serialize (Either a b)
 
 instance Serialize a => Serialize [a] where
-  size# = sizeFoldable
+  size = sizeFoldable
   put = putFoldable
   get = reverse <$!> foldGet (:) []
 
 instance Serialize a => Serialize (Seq a) where
-  size# = sizeFoldable
+  size = sizeFoldable
   put = putFoldable
   get = foldGet (flip (Seq.|>)) Seq.empty
 
 instance Serialize IntSet where
-  size# is = sizeOf## @Word32 +# (primConstSize# @Int) *# unI# (IntSet.size is)
+  size is = size @Int + (size @Int) * (IntSet.size is)
   put is =
     put (fromIntegral @Int @Word32 $ IntSet.size is)
       <> IntSet.foldr (mappend . put) mempty is
   get = foldGet IntSet.insert IntSet.empty
 
 instance Serialize a => Serialize (IntMap a) where
-  size# xs =
-    sizeOf## @Word32 +# case constSize# (proxy# @a) of
-      ConstSize# i# -> (primConstSize# @Int +# i#) *# unI# (IntMap.size xs)
-      VarSize# -> unI# $ getSum $ foldMap' (\x -> Sum (size x + primConstSize @Int)) xs
+  size xs =
+    size @Int + case isPrim @a of
+      STrue -> (size @Int + size @a) * (IntMap.size xs)
+      SFalse -> getSum $ foldMap' (\x -> Sum (size @Int + size x)) xs
   put im =
     put (fromIntegral @Int @Word32 (IntMap.size im))
       <> IntMap.foldMapWithKey (\i x -> put i <> put x) im
@@ -372,44 +382,44 @@ instance Serialize a => Serialize (IntMap a) where
 --   size# xs = sizeOf## @Word32
 
 instance Serialize Primitive.ByteArray where
-  size# bs = unI# $ Primitive.sizeofByteArray bs
-  {-# INLINE size# #-}
+  size = Primitive.sizeofByteArray
+  {-# INLINE size #-}
   put bs = putByteArray 0 (Primitive.sizeofByteArray bs) bs
   get = getByteArray
 
 instance Serialize Text where
-  size# (Data.Text.Internal.Text _arr _off (I# len#)) = sizeOf## @Word32 +# len#
-  {-# INLINE size# #-}
+  size (Data.Text.Internal.Text _arr _off len) = size @Int + len
+  {-# INLINE size #-}
   put (Data.Text.Internal.Text (Data.Text.Array.ByteArray (Primitive.ByteArray -> arr)) off len) =
     putByteArray off len arr
   get = do
-    size <- fromIntegral @Word32 @Int <$> get
+    size <- fromIntegral @Word32 @Int <$!> get
     unsafeWithGet size \arr i -> do
       -- can't use getByteArray here because we need to ensure it is UTF-8
       -- wait for text to allow decoding UTF-8 from ByteArray
       pure $! Text.Encoding.decodeUtf8 $! pinnedToByteString i size arr
 
 instance Serialize ShortByteString where
-  size# bs = sizeOf## @Word32 +# unI# (SBS.length bs)
-  {-# INLINE size# #-}
+  size bs = size @Int + (SBS.length bs)
+  {-# INLINE size #-}
 #if MIN_VERSION_bytestring(0,11,1)
   put (SBS.SBS arr#) = put (Primitive.ByteArray arr#)
-  get = (\(Primitive.ByteArray arr#) -> SBS.SBS arr#) <$> get
+  get = (\(Primitive.ByteArray arr#) -> SBS.SBS arr#) <$!> get
 #else
   put = put . SBS.fromShort
-  get = SBS.toShort <$> get
+  get = SBS.toShort <$!> get
 #endif
 
 instance Serialize ByteString where
-  size# bs = sizeOf## @Word32 +# unI# (B.length bs)
-  {-# INLINE size# #-}
+  size bs = size @Int + (B.length bs)
+  {-# INLINE size #-}
   put (B.Internal.PS fp off len) =
     put (fromIntegral @Int @Word32 len) <> unsafeWithPut len \marr i ->
       Foreign.withForeignPtr fp \p -> do
         let p' :: Primitive.Ptr Word8 = p `Foreign.plusPtr` off
         Primitive.copyPtrToMutableByteArray marr i p' len
   get = do
-    size <- fromIntegral @Word32 @Int <$> get
+    size <- fromIntegral @Word32 @Int <$!> get
     unsafeWithGet size \arr i ->
       pure $! B.copy $! pinnedToByteString i size arr
 
@@ -421,22 +431,22 @@ putByteArray off len arr =
 
 getByteArray :: Get Primitive.ByteArray
 getByteArray = do
-  len <- fromIntegral @Word32 @Int <$> get
+  len <- fromIntegral @Word32 @Int <$!> get
   unsafeWithGet len \arr i -> do
     marr <- Primitive.newByteArray len
     Primitive.copyByteArray marr 0 arr i len
     Primitive.unsafeFreezeByteArray marr
 {-# INLINE getByteArray #-}
 
-sizeFoldable :: forall a f. (Serialize a, Foldable f) => f a -> Int#
+sizeFoldable :: forall a f. (Serialize a, Foldable f) => f a -> Int
 sizeFoldable xs =
-  sizeOf## @Word32 +# case constSize## @a of
-    ConstSize# sz# -> unI# (length xs) *# sz#
-    _ -> unI# $ getSum $ foldMap' (Sum #. size) xs
+  size @Int + case isPrim @a of
+    STrue -> size @a * length xs
+    SFalse -> getSum $ foldMap' (Sum #. size) xs
 {-# INLINE sizeFoldable #-}
 
 -- sizeMap :: forall a b m. (Serialize a, Serialize b) => (m -> [(a, b)]) -> (m -> Int) -> m -> Int#
--- sizeMap toList length m = 
+-- sizeMap toList length m =
 --   sizeOf## @Word32 +# case (# constSize## @a, constSize## @b #) of
 --     (# ConstSize# sz#, ConstSize# sz'# #) -> (sz# +# sz'#) *# unI# (length m)
 --     (# VarSize#, ConstSize# sz# #) -> foldMap' toList m
@@ -464,13 +474,13 @@ putBifoldableWith len xs =
 
 foldGet :: (Serialize a) => (a -> b -> b) -> b -> Get b
 foldGet f z = do
-  size <- fromIntegral @Word32 @Int <$> get
+  size <- fromIntegral @Word32 @Int <$!> get
   foldlM (\xs _ -> do x <- get; pure $! f x xs) z [1 .. size]
 {-# INLINE foldGet #-}
 
 foldGet2 :: (Serialize a, Serialize b) => (a -> b -> c -> c) -> c -> Get c
 foldGet2 f z = do
-  size <- fromIntegral @Word32 @Int <$> get
+  size <- fromIntegral @Word32 @Int <$!> get
   foldlM (\xs _ -> do x <- get; y <- get; pure $! f x y xs) z [1 .. size]
 {-# INLINE foldGet2 #-}
 
@@ -481,7 +491,7 @@ encodeIO x = do
     PR# s# _ -> (# s#, () #)
   pinnedToByteString 0 sz <$!> Primitive.unsafeFreezeByteArray marr
   where
-    sz = size x
+    sz = theSize x
 
 encode :: Serialize a => a -> ByteString
 encode = IO.Unsafe.unsafeDupablePerformIO . encodeIO
