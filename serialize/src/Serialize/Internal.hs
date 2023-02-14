@@ -30,6 +30,7 @@ import Data.IntMap (IntMap)
 import Data.IntMap qualified as IntMap
 import Data.IntSet (IntSet)
 import Data.IntSet qualified as IntSet
+import Data.List.NonEmpty (NonEmpty)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Monoid (Sum (..))
@@ -37,6 +38,8 @@ import Data.Primitive (sizeOf)
 import Data.Primitive qualified as Primitive
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text.Array qualified
 import Data.Text.Encoding qualified as Text.Encoding
@@ -393,6 +396,8 @@ instance Serialize a => Serialize [a] where
   put = putFoldable
   get = reverse <$!> foldGet (:) []
 
+instance Serialize a => Serialize (NonEmpty a)
+
 instance Serialize a => Serialize (Seq a) where
   size = sizeFoldable
   put = putFoldable
@@ -414,6 +419,11 @@ instance Serialize a => Serialize (IntMap a) where
     putSize (IntMap.size im)
       <> IntMap.foldMapWithKey (\i x -> put i <> put x) im
   get = foldGet2 IntMap.insert IntMap.empty
+
+instance (Ord a, Serialize a) => Serialize (Set a) where
+  size = sizeFoldable
+  put = putFoldable
+  get = foldGet Set.insert Set.empty
 
 instance (Ord a, Serialize a, Serialize b) => Serialize (Map a b) where
   size m =

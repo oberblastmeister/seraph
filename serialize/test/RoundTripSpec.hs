@@ -10,9 +10,11 @@ import Data.HashMap.Strict (HashMap)
 import Data.Int
 import Data.IntMap (IntMap)
 import Data.IntSet (IntSet)
+import Data.List.NonEmpty (NonEmpty)
 import Data.Map.Strict (Map)
 import Data.Primitive (ByteArray)
 import Data.Sequence (Seq)
+import Data.Set (Set)
 import Data.Text (Text)
 import Data.Tree (Tree)
 import Data.Word (Word8)
@@ -33,6 +35,8 @@ props =
     serializeProp @(Tree Int),
     serializeProp @[Int],
     serializeProp @[Either Int16 Int32],
+    serializeProp @(NonEmpty Int),
+    serializeProp @(NonEmpty ByteString),
     serializeProp @[(Int, Int64, Either Word8 Word8)],
     serializeProp @Text,
     serializeProp @ByteString,
@@ -50,6 +54,8 @@ props =
     serializeProp @(IntMap Text),
     serializeProp @(Map Int Int),
     serializeProp @(Map Int Text),
+    serializeProp @(Set Int),
+    serializeProp @(Set Text),
     serializeProp @(HashMap Int Int),
     serializeProp @(HashMap Int Text)
   ]
