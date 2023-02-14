@@ -1,8 +1,8 @@
 {-# HLINT ignore "Avoid lambda" #-}
-{-# LANGUAGE DeriveAnyClass #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 import Control.DeepSeq
+import BinTree
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.Store qualified as S
@@ -13,37 +13,6 @@ import GHC.Generics (Generic)
 import Criterion.Main
 import Serialize
 import Test.QuickCheck
-
-data BinTree a
-  = Tree
-      (BinTree a)
-      (BinTree a)
-  | Leaf a
-  deriving (Show, Read, Eq, Typeable, Generic, NFData)
-
-data Direction
-  = North
-  | South
-  | Center
-  | East
-  | West
-  deriving (Show, Read, Eq, Typeable, Generic, NFData)
-
-instance Arbitrary Direction where
-  arbitrary = elements [North, South, Center, East, West]
-
--- General instances
-instance F.Flat a => F.Flat (BinTree a)
-
-instance F.Flat Direction
-
-instance S.Store a => S.Store (BinTree a)
-
-instance S.Store Direction
-
-instance Serialize a => Serialize (BinTree a)
-
-instance Serialize Direction
 
 main :: IO ()
 main = do

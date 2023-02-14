@@ -92,7 +92,6 @@ class KnownBool (IsConstSize a) => Serialize a where
 
   default size :: (Generic a, GSerializeSize (G.Rep a), IsConstSize a ~ False) => ConstSize (IsConstSize a) a
   size x = gSize# (G.from x)
-  {-# INLINE size #-}
 
   theSize x = case isPrim @a of
     STrue -> size @a

@@ -56,6 +56,9 @@ instance S.Store Iris
 instance Serialize Iris
 {- ORMOLU_ENABLE -}
 
+serializeSize :: Car -> Int
+serializeSize = size
+
 flatDecode :: F.Get Car
 flatDecode = F.decode
 
