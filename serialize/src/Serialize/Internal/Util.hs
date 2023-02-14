@@ -13,6 +13,7 @@ module Serialize.Internal.Util
     ( .# ),
     ( #. ),
     runST#,
+    Impossible(..),
   )
 where
 
@@ -30,6 +31,7 @@ import Unsafe.Coerce qualified
 import Data.Coerce
 import GHC.ST qualified
 import Control.Monad.ST (ST)
+import Control.Exception (Exception)
 
 type S# = State# RealWorld
 
@@ -101,3 +103,8 @@ pinnedToByteString off len bs@(Primitive.ByteArray b#)
 
 infixr 9 #.
 infixl 8 .#
+
+data Impossible = Impossible
+  deriving (Show, Eq)
+
+instance Exception Impossible

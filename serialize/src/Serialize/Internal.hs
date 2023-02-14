@@ -244,7 +244,7 @@ instance (GSerializeGet f, KnownNat n) => GSerializeGetSum n (G.C1 c f) where
   gGetSum# tag _
     | tag == cur = gGet
     | tag > cur = throwGet $ InvalidSumTag (fromIntegral tag)
-    | otherwise = throwGet Unreachable
+    | otherwise = throwGet Impossible
     where
       cur = fromInteger @Word8 (TypeLits.natVal' (proxy# @n))
   {-# INLINE gGetSum# #-}
@@ -375,7 +375,7 @@ instance Serialize a => Serialize (Maybe a) where
     get @Word8 >>= \case
       0 -> pure Nothing
       1 -> Just <$> get
-      _ -> undefined
+      _ -> throwGet Impossible
 
 instance (Serialize a, Serialize b) => Serialize (Either a b) where
   size e = size @Word8 + either theSize theSize e
@@ -386,7 +386,7 @@ instance (Serialize a, Serialize b) => Serialize (Either a b) where
     get @Word8 >>= \case
       0 -> Left <$> get
       1 -> Right <$> get
-      _ -> undefined
+      _ -> throwGet Impossible
 
 instance Serialize a => Serialize [a] where
   size = sizeFoldable
