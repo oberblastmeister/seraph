@@ -6,9 +6,12 @@ import Control.Monad.ST (ST, stToIO)
 import Data.Primitive (MutableByteArray#, Prim)
 import Data.Primitive qualified as Primitive
 import Data.Primitive.ByteArray.Unaligned (PrimUnaligned (..), writeUnalignedByteArray)
+import GHC.Exts (getSizeofMutableByteArray#)
 import Serialize.Internal.Exts
 import Serialize.Internal.Util
 
+-- Note: Because everything is unboxed there are a lot more arguments to the function
+-- This makes recursive calls more expensive
 newtype Put :: Type where
   Put# ::
     { runPut# ::
@@ -19,14 +22,14 @@ newtype Put :: Type where
     } ->
     Put
 
-newtype PE# = PE## (# MutableByteArray# RealWorld, Int# #)
+newtype PE# = PE## (# MutableByteArray# RealWorld #)
 
 newtype PS# = PutState# (# Int# #)
 
 newtype PR# = PR## (# S#, PS# #)
 
-pattern PE# :: MutableByteArray# RealWorld -> Int# -> PE#
-pattern PE# marr# l# = PE## (# marr#, l# #)
+pattern PE# :: MutableByteArray# RealWorld -> PE#
+pattern PE# marr# = PE## (# marr# #)
 
 pattern PS# :: Int# -> PS#
 pattern PS# x = PutState# (# x #)
@@ -62,16 +65,18 @@ instance Exception PutException
 throwPut :: Exception e => e -> Put
 throwPut e = Put# \_ ps# s# -> case runIO# (Exception.throwIO e) s# of
   (# s#, _ #) -> PR# s# ps#
+{-# NOINLINE throwPut #-}
 
 -- Even more unsafe!
 -- Used because ByteString stuff uses IO instead of ST
 -- Just don't shoot the missiles in here!
 unsafeWithPutIO :: Int -> (Primitive.MutableByteArray RealWorld -> Int -> IO ()) -> Put
-unsafeWithPutIO (I# o#) f = Put# \(PE# marr# l#) ps@(PS# i#) s# -> case i# +# o# ># l# of
-  1# -> case runIO# (Exception.throwIO $ IndexOutOfBounds (I# (i# +# o#)) (I# l#)) s# of
-    (# s#, _ #) -> PR# s# ps
-  _ -> case runIO# (f (Primitive.MutableByteArray marr#) (I# i#)) s# of
-    (# s#, () #) -> PR# s# (incPS# o# ps)
+unsafeWithPutIO (I# o#) f = Put# \(PE# marr#) ps@(PS# i#) s# -> case getSizeofMutableByteArray# marr# s# of
+  (# s#, l# #) -> case i# +# o# ># l# of
+    1# -> case runIO# (Exception.throwIO $ IndexOutOfBounds (I# (i# +# o#)) (I# l#)) s# of
+      (# s#, _ #) -> PR# s# ps
+    _ -> case runIO# (f (Primitive.MutableByteArray marr#) (I# i#)) s# of
+      (# s#, () #) -> PR# s# (incPS# o# ps)
 {-# INLINE unsafeWithPutIO #-}
 
 unsafeWithPut :: Int -> (forall s. Primitive.MutableByteArray s -> Int -> ST s ()) -> Put

@@ -65,13 +65,11 @@ instance Monad Get where
 data GetException
   = IndexOutOfBounds !Int !Int
   | InvalidSumTag !Int
-  | Unreachable
   deriving (Eq, Ord)
 
 instance Show GetException where
   show (IndexOutOfBounds i l) = "Index out of bounds: " ++ show i ++ " >= " ++ show l
   show (InvalidSumTag tag) = "Invalid sum tag: " ++ show tag
-  show Unreachable = "Unreachable"
 
 instance Exception GetException
 
@@ -86,6 +84,7 @@ unsafeWithGet (I# o#) f = Get# \(GE# arr# l#) gs@(GS# i#) s# -> case i# +# o# >#
 throwGet :: Exception e => e -> Get a
 throwGet e = Get# \_ gs# s# -> case runIO# (Exception.throwIO e) s# of
   (# s#, x #) -> GR# s# gs# x
+{-# NOINLINE throwGet #-}
 
 getPrim :: forall a. (Prim a, PrimUnaligned a) => Get a
 getPrim = unsafeWithGet (sizeOf' @a) indexUnalignedByteArray

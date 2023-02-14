@@ -56,8 +56,14 @@ storeSize = S.size
 serializeSize :: BinTree Direction -> Int
 serializeSize = size
 
+serializeEncode :: BinTree Direction -> Put
+serializeEncode = put
+
 serializeDecode :: Get (BinTree Direction)
 serializeDecode = get
 
 storeDecode :: S.Peek (BinTree Direction)
 storeDecode = S.peek
+
+storeEncode :: BinTree Direction -> S.Poke ()
+storeEncode = S.poke

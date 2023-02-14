@@ -244,7 +244,7 @@ instance (GSerializeGet f, KnownNat n) => GSerializeGetSum n (G.C1 c f) where
   gGetSum# tag _
     | tag == cur = gGet
     | tag > cur = throwGet $ InvalidSumTag (fromIntegral tag)
-    | otherwise = throwGet Impossible
+    | otherwise = impossible
     where
       cur = fromInteger @Word8 (TypeLits.natVal' (proxy# @n))
   {-# INLINE gGetSum# #-}
@@ -375,7 +375,7 @@ instance Serialize a => Serialize (Maybe a) where
     get @Word8 >>= \case
       0 -> pure Nothing
       1 -> Just <$> get
-      _ -> throwGet Impossible
+      _ -> impossible
 
 instance (Serialize a, Serialize b) => Serialize (Either a b) where
   size e = size @Word8 + either theSize theSize e
@@ -386,7 +386,7 @@ instance (Serialize a, Serialize b) => Serialize (Either a b) where
     get @Word8 >>= \case
       0 -> Left <$> get
       1 -> Right <$> get
-      _ -> throwGet Impossible
+      _ -> impossible
 
 instance Serialize a => Serialize [a] where
   size = sizeFoldable
@@ -536,7 +536,7 @@ foldGet2 f z = do
 encodeIO :: Serialize a => a -> IO ByteString
 encodeIO x = do
   marr@(Primitive.MutableByteArray marr#) <- Primitive.newPinnedByteArray sz
-  IO \s# -> case runPut# (put x) (PE# marr# (unI# sz)) (PS# 0#) s# of
+  IO \s# -> case runPut# (put x) (PE# marr#) (PS# 0#) s# of
     PR# s# _ -> (# s#, () #)
   pinnedToByteString 0 sz <$!> Primitive.unsafeFreezeByteArray marr
   where

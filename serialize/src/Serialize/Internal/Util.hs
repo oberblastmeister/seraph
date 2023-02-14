@@ -14,6 +14,7 @@ module Serialize.Internal.Util
     ( #. ),
     runST#,
     Impossible(..),
+    impossible,
   )
 where
 
@@ -32,6 +33,7 @@ import Data.Coerce
 import GHC.ST qualified
 import Control.Monad.ST (ST)
 import Control.Exception (Exception)
+import qualified Control.Exception as Exception
 
 type S# = State# RealWorld
 
@@ -108,3 +110,6 @@ data Impossible = Impossible
   deriving (Show, Eq)
 
 instance Exception Impossible
+
+impossible :: forall a. a
+impossible = Exception.throw Impossible

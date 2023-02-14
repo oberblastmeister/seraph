@@ -9,7 +9,6 @@ import Data.Store qualified as S
 import Data.Typeable (Typeable)
 import Dataset
 import Flat qualified as F
-import GHC.Generics (Generic)
 import Criterion.Main
 import Serialize
 import Test.QuickCheck
@@ -37,12 +36,12 @@ benchs (name, obj) =
   let nm pkg = concat [name, "-", pkg]
    in -- env (return obj) $ \sobj -> bgroup ("serialization (mSecs)") $ map (\(pkg,s,_) -> bench (nm pkg) (nfIO (s sobj))) pkgs
       [ bgroup "serialization (time)" $
-          map (\(pkg, s, _) -> env (pure obj) \obj -> bench (nm pkg) (nf BS.length (s obj))) pkgs,
+          map (\(pkg, s, _) -> env (pure obj) \obj -> bench (nm pkg) (nf s obj)) pkgs,
         -- NOTE: the benchmark time includes the comparison of the deserialised obj with the original
         bgroup "deserialization (time)" $
           map
             ( \(pkg, s, d) ->
-                env (pure $ s obj) (\bs -> bench (nm pkg) $ whnf (obj ==) (d bs))
+                env (pure $ s obj) (\bs -> bench (nm pkg) $ nf d bs)
             )
             pkgs
       ]
@@ -50,9 +49,9 @@ benchs (name, obj) =
 pkgs :: (C a) => [(String, a -> ByteString, ByteString -> a)]
 pkgs =
   [ 
+    ("store", S.encode, fromRight' . S.decode),
     ("serialize", encode, decode'),
-    ("flat", F.flat, fromRight' . F.unflat),
-    ("store", S.encode, fromRight' . S.decode)
+    ("flat", F.flat, fromRight' . F.unflat)
   ]
 
 fromRight' :: Either a b -> b

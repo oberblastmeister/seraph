@@ -14,7 +14,6 @@ import Serialize
 import Numeric.Datasets
 import Numeric.Datasets.Iris
 import Network.HTTP.Req
-import qualified Flat.Encoder as F
 import qualified Flat.Decoder as F
 
 {- ORMOLU_DISABLE -}
@@ -78,7 +77,7 @@ by :: Int -> [a] -> [a]
 by n = concat . replicate n
 
 carsData :: IO [Car]
-carsData = by 20 <$> getDataset car {source = URL $ uciMLDB /: "car" /: "car.data"}
+carsData = by 1000 <$> getDataset car {source = URL $ uciMLDB /: "car" /: "car.data"}
 
 irisData :: [Iris]
 irisData = by 2000 iris

@@ -21,23 +21,48 @@ data BinOp
   | Div
   deriving (Show, Eq, Generic, NFData)
 
+data UnaryOp
+  = Neg
+  | Not
+  deriving (Show, Eq, Generic, NFData)
+
+data Lit
+  = String !Text
+  | Bool !Bool
+  | Int !Int
+  | Null
+  deriving (Show, Eq, Generic, NFData)
+
 data Expr
   = Bin Expr !BinOp Expr
+  | Unary !UnaryOp Expr
   | App Expr [Expr]
-  | Lam !Text Expr
-  | Int !Int
-  | Bool !Bool
-  | String !Text
-  | Not !Expr
+  | Let [(Text, Expr)] Expr
+  | Lam [Text] Expr
+  | Lit !Lit
   deriving (Show, Eq, Typeable, Generic, NFData)
 
 instance Serialize BinOp
 
 instance Serialize Expr
 
+instance Serialize UnaryOp
+
+instance Serialize Lit
+
 instance S.Store BinOp
 
 instance S.Store Expr
+
+instance S.Store UnaryOp
+
+instance S.Store Lit
+
+serializeEncode :: Expr -> Put
+serializeEncode = put
+
+storeEncode :: Expr -> S.Poke ()
+storeEncode = S.poke
 
 serializeSize :: Expr -> Int
 serializeSize = size
