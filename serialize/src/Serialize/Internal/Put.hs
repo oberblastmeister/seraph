@@ -1,5 +1,7 @@
 module Serialize.Internal.Put where
 
+import Control.Exception (Exception)
+import Control.Exception qualified as Exception
 import Control.Monad.ST (ST, stToIO)
 import Data.Primitive (MutableByteArray#, Prim)
 import Data.Primitive qualified as Primitive
@@ -42,12 +44,6 @@ incPS# :: Int# -> PS# -> PS#
 incPS# i# (PS# x#) = PS# (i# +# x#)
 {-# INLINE incPS# #-}
 
-writePE# :: forall a. (Prim a, PrimUnaligned a) => PE# -> Int# -> a -> S# -> S#
-writePE# (PE# marr# l#) i# x s# = case i# +# sizeOf## @a ># l# of
-  1# -> error "Index out of bounds"
-  _ -> writeUnalignedByteArray# marr# i# x s#
-{-# INLINE writePE# #-}
-
 instance Semigroup Put where
   Put# p1 <> Put# p2 = Put# \marr# ps# s# -> case p1 marr# ps# s# of
     PR# s# ps# -> p2 marr# ps# s#
@@ -57,12 +53,23 @@ instance Monoid Put where
   mempty = Put# \_marr# ps# s# -> PR# s# ps#
   {-# INLINE mempty #-}
 
+data PutException
+  = IndexOutOfBounds !Int !Int
+  deriving (Show, Eq, Ord)
+
+instance Exception PutException
+
+throwPut :: Exception e => e -> Put
+throwPut e = Put# \_ ps# s# -> case runIO# (Exception.throwIO e) s# of
+  (# s#, _ #) -> PR# s# ps#
+
 -- Even more unsafe!
 -- Used because ByteString stuff uses IO instead of ST
 -- Just don't shoot the missiles in here!
 unsafeWithPutIO :: Int -> (Primitive.MutableByteArray RealWorld -> Int -> IO ()) -> Put
 unsafeWithPutIO (I# o#) f = Put# \(PE# marr# l#) ps@(PS# i#) s# -> case i# +# o# ># l# of
-  1# -> error "Index out of bounds"
+  1# -> case runIO# (Exception.throwIO $ IndexOutOfBounds (I# (i# +# o#)) (I# l#)) s# of
+    (# s#, _ #) -> PR# s# ps
   _ -> case runIO# (f (Primitive.MutableByteArray marr#) (I# i#)) s# of
     (# s#, () #) -> PR# s# (incPS# o# ps)
 {-# INLINE unsafeWithPutIO #-}

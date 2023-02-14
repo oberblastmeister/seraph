@@ -243,8 +243,8 @@ instance (GSerializePut f, KnownNat n) => GSerializePutSum n (G.C1 c f) where
 instance (GSerializeGet f, KnownNat n) => GSerializeGetSum n (G.C1 c f) where
   gGetSum# tag _
     | tag == cur = gGet
-    | tag > cur = Exception.throw (InvalidSumTag (fromIntegral cur) (fromIntegral tag))
-    | otherwise = error "Implementation error"
+    | tag > cur = throwGet $ InvalidSumTag (fromIntegral tag)
+    | otherwise = throwGet Unreachable
     where
       cur = fromInteger @Word8 (TypeLits.natVal' (proxy# @n))
   {-# INLINE gGetSum# #-}

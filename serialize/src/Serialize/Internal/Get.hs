@@ -1,5 +1,6 @@
 module Serialize.Internal.Get where
 
+import Control.Exception (Exception)
 import Control.Exception qualified as Exception
 import Data.Primitive
 import Data.Primitive qualified as Primitive
@@ -38,13 +39,6 @@ pattern GE# arr# l# = GE## (# arr#, l# #)
 
 {-# COMPLETE GE# #-}
 
-indexGE# :: forall a. (Prim a, PrimUnaligned a) => Int# -> GE# -> a
-indexGE# i# (GE# arr# l#) = case i# +# sizeOf## @a ># l# of
-  1# -> Exception.throw $ IndexOutOfBounds (I# (i# +# sizeOf## @a)) (I# l#)
-  _ -> case indexUnalignedByteArray# arr# i# of
-    !x -> x
-{-# INLINE indexGE# #-}
-
 incGS# :: Int# -> GS# -> GS#
 incGS# i# (GS# x#) = GS# (i# +# x#)
 {-# INLINE incGS# #-}
@@ -70,21 +64,28 @@ instance Monad Get where
 
 data GetException
   = IndexOutOfBounds !Int !Int
-  | InvalidSumTag !Int !Int
-  deriving (Eq)
+  | InvalidSumTag !Int
+  | Unreachable
+  deriving (Eq, Ord)
 
 instance Show GetException where
   show (IndexOutOfBounds i l) = "Index out of bounds: " ++ show i ++ " >= " ++ show l
-  show (InvalidSumTag cur tag) = "Invalid sum tag: " ++ show cur ++ " != " ++ show tag
+  show (InvalidSumTag tag) = "Invalid sum tag: " ++ show tag
+  show Unreachable = "Unreachable"
 
-instance Exception.Exception GetException
+instance Exception GetException
 
 unsafeWithGet :: Int -> (Primitive.ByteArray -> Int -> a) -> Get a
 unsafeWithGet (I# o#) f = Get# \(GE# arr# l#) gs@(GS# i#) s# -> case i# +# o# ># l# of
-  1# -> Exception.throw $ IndexOutOfBounds (I# (i# +# o#)) (I# l#)
+  1# -> case runIO# (Exception.throwIO $ IndexOutOfBounds (I# (i# +# o#)) (I# l#)) s# of
+    (# s#, x #) -> GR# s# gs x
   _ -> case f (Primitive.ByteArray arr#) (I# i#) of
     !x -> GR# s# (incGS# o# gs) x
 {-# INLINE unsafeWithGet #-}
+
+throwGet :: Exception e => e -> Get a
+throwGet e = Get# \_ gs# s# -> case runIO# (Exception.throwIO e) s# of
+  (# s#, x #) -> GR# s# gs# x
 
 getPrim :: forall a. (Prim a, PrimUnaligned a) => Get a
 getPrim = unsafeWithGet (sizeOf' @a) indexUnalignedByteArray
