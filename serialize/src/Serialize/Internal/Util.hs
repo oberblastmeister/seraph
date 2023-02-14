@@ -12,6 +12,7 @@ module Serialize.Internal.Util
     sizeOf',
     ( .# ),
     ( #. ),
+    runST#,
   )
 where
 
@@ -27,6 +28,8 @@ import Serialize.Internal.Exts
 import System.IO.Unsafe (unsafeDupablePerformIO)
 import Unsafe.Coerce qualified
 import Data.Coerce
+import GHC.ST qualified
+import Control.Monad.ST (ST)
 
 type S# = State# RealWorld
 
@@ -49,6 +52,10 @@ unW# (W# w#) = w#
 runIO# :: IO a -> State# RealWorld -> (# State# RealWorld, a #)
 runIO# = coerce
 {-# INLINE runIO# #-}
+
+runST# :: ST s a -> State# s -> (# State# s, a #)
+runST# = coerce
+{-# INLINE runST# #-}
 
 (<!$!>) :: Monad m => (a -> b) -> m a -> m b
 f <!$!> m = do

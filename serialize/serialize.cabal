@@ -91,6 +91,7 @@ common common-options
     primitive,
     primitive-unaligned,
     byte-order,
+    ghc-bignum,
 
 library
   import: common-options

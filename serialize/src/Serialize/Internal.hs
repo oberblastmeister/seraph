@@ -11,6 +11,7 @@ module Serialize.Internal where
 
 import Control.Exception qualified as Exception
 import Control.Monad ((<$!>))
+import Control.Monad.ST (runST)
 import Data.Bifoldable (Bifoldable, bifoldMap)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
@@ -381,10 +382,11 @@ instance (Serialize a, Serialize b) => Serialize (Either a b) where
   put e = case e of
     Left x -> put @Word8 0 <> put x
     Right x -> put @Word8 1 <> put x
-  get = get @Word8 >>= \case
-    0 -> Left <$> get
-    1 -> Right <$> get
-    _ -> undefined
+  get =
+    get @Word8 >>= \case
+      0 -> Left <$> get
+      1 -> Right <$> get
+      _ -> undefined
 
 instance Serialize a => Serialize [a] where
   size = sizeFoldable
@@ -445,7 +447,7 @@ instance Serialize Text where
     unsafeWithGet size \arr i -> do
       -- can't use getByteArray here because we need to ensure it is UTF-8
       -- wait for text to allow decoding UTF-8 from ByteArray
-      pure $! Text.Encoding.decodeUtf8 $! pinnedToByteString i size arr
+      Text.Encoding.decodeUtf8 $! pinnedToByteString i size arr
 
 instance Serialize ShortByteString where
   size bs = size @Int + (SBS.length bs)
@@ -462,14 +464,16 @@ instance Serialize ByteString where
   size bs = size @Int + (B.length bs)
   {-# INLINE size #-}
   put (B.Internal.PS fp off len) =
-    putSize len <> unsafeWithPut len \marr i ->
+    putSize len <> unsafeWithPutIO len \marr i ->
       Foreign.withForeignPtr fp \p -> do
         let p' :: Primitive.Ptr Word8 = p `Foreign.plusPtr` off
         Primitive.copyPtrToMutableByteArray marr i p' len
   get = do
     size <- getSize
     unsafeWithGet size \arr i ->
-      pure $! B.copy $! pinnedToByteString i size arr
+      B.copy $! pinnedToByteString i size arr
+
+-- instance Serialize BigNum
 
 putByteArray :: Int -> Int -> Primitive.ByteArray -> Put
 putByteArray off len arr =
@@ -480,7 +484,7 @@ putByteArray off len arr =
 getByteArray :: Get Primitive.ByteArray
 getByteArray = do
   len <- getSize
-  unsafeWithGet len \arr i -> do
+  unsafeWithGet len \arr i -> runST $ do
     marr <- Primitive.newByteArray len
     Primitive.copyByteArray marr 0 arr i len
     Primitive.unsafeFreezeByteArray marr

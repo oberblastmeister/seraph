@@ -1,5 +1,6 @@
 module Serialize.Internal.Put where
 
+import Control.Monad.ST (ST, stToIO)
 import Data.Primitive (MutableByteArray#, Prim)
 import Data.Primitive qualified as Primitive
 import Data.Primitive.ByteArray.Unaligned (PrimUnaligned (..), writeUnalignedByteArray)
@@ -56,11 +57,18 @@ instance Monoid Put where
   mempty = Put# \_marr# ps# s# -> PR# s# ps#
   {-# INLINE mempty #-}
 
-unsafeWithPut :: Int -> (Primitive.MutableByteArray RealWorld -> Int -> IO ()) -> Put
-unsafeWithPut (I# o#) f = Put# \(PE# marr# l#) ps@(PS# i#) s# -> case i# +# o# ># l# of
+-- Even more unsafe!
+-- Used because ByteString stuff uses IO instead of ST
+-- Just don't shoot the missiles in here!
+unsafeWithPutIO :: Int -> (Primitive.MutableByteArray RealWorld -> Int -> IO ()) -> Put
+unsafeWithPutIO (I# o#) f = Put# \(PE# marr# l#) ps@(PS# i#) s# -> case i# +# o# ># l# of
   1# -> error "Index out of bounds"
   _ -> case runIO# (f (Primitive.MutableByteArray marr#) (I# i#)) s# of
     (# s#, () #) -> PR# s# (incPS# o# ps)
+{-# INLINE unsafeWithPutIO #-}
+
+unsafeWithPut :: Int -> (forall s. Primitive.MutableByteArray s -> Int -> ST s ()) -> Put
+unsafeWithPut o f = unsafeWithPutIO o (\marr i -> stToIO (f marr i))
 {-# INLINE unsafeWithPut #-}
 
 putPrim :: forall a. (Prim a, PrimUnaligned a) => a -> Put
