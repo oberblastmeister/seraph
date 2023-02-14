@@ -365,9 +365,26 @@ instance (Serialize a, Serialize b, Serialize c) => Serialize (a, b, c)
 
 instance (Serialize a, Serialize b, Serialize c, Serialize d) => Serialize (a, b, c, d)
 
-instance Serialize a => Serialize (Maybe a)
+instance Serialize a => Serialize (Maybe a) where
+  size m = size @Word8 + maybe 0 theSize m
+  put m = case m of
+    Nothing -> put @Word8 0
+    Just x -> put @Word8 1 <> put x
+  get =
+    get @Word8 >>= \case
+      0 -> pure Nothing
+      1 -> Just <$> get
+      _ -> undefined
 
-instance (Serialize a, Serialize b) => Serialize (Either a b)
+instance (Serialize a, Serialize b) => Serialize (Either a b) where
+  size e = size @Word8 + either theSize theSize e
+  put e = case e of
+    Left x -> put @Word8 0 <> put x
+    Right x -> put @Word8 1 <> put x
+  get = get @Word8 >>= \case
+    0 -> Left <$> get
+    1 -> Right <$> get
+    _ -> undefined
 
 instance Serialize a => Serialize [a] where
   size = sizeFoldable
