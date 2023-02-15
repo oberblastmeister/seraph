@@ -14,7 +14,6 @@ import Control.DeepSeq
 import Serialize
 import qualified Data.Store as S
 import qualified Flat as F
-import Data.Text (Text)
 import Test.QuickCheck.Instances ()
 
 data RelScore = Low | Med | High | VeryHigh
