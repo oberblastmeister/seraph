@@ -12,15 +12,16 @@ module Minecraft where
 import Control.DeepSeq (NFData)
 import Data.Int
 import Data.Store qualified as S
-import Data.Text (Text)
 import Data.Word
 import Flat qualified as F
 import GHC.Generics (Generic)
 import Generic.Random (GenericArbitrarySingle (..), GenericArbitraryU(..))
-import Serialize (Serialize, encode)
+import Serialize
 import Test.QuickCheck (Arbitrary)
 import Test.QuickCheck.Instances ()
 import Data.ByteString (ByteString)
+
+type Text = ByteString
 
 data GameType
   = Survival
@@ -124,3 +125,13 @@ serializeEncode = encode
 
 storeEncode :: Player -> ByteString
 storeEncode = S.encode
+
+serializeDecode :: ByteString -> Player
+serializeDecode = decode'
+
+storeDecode :: ByteString -> Player
+storeDecode = fromRight' . S.decode
+
+fromRight' :: Either a b -> b
+fromRight' (Left _) = undefined
+fromRight' (Right x) = x

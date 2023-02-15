@@ -12,7 +12,7 @@ import Serialize.Internal.Util
 newtype Get :: Type -> Type where
   Get# :: {runGet# :: GE -> Int -> IO (GR a)} -> Get a
 
-data GR a = GR !Int a
+data GR a = GR !Int !a
 
 data GE = GE !Primitive.ByteArray !Int
 

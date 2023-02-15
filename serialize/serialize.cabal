@@ -143,6 +143,7 @@ benchmark bench
     BinTree
     Expr
     Minecraft
+    Cars
   ghc-options: -O2
   build-depends:
     QuickCheck,

@@ -10,13 +10,15 @@ import Criterion.Main
 import Serialize
 import Test.QuickCheck
 import Minecraft
+import Cars
 
 main :: IO ()
 main = do
   tree <- (generateBalancedTree 21 :: IO (BinTree Direction))
   let directionTree = ("BinTree Direction", tree)
   players <- sample' $ resize 100 $ arbitrary @[Player]
-  let tests = benchs ("Players", players) ++ benchs directionTree
+  cars <- sample' $ resize 500 $ arbitrary @[Car]
+  let tests = benchs ("Cars", cars) ++ benchs ("Players", players) ++ benchs directionTree
   defaultMain tests
 
 type C a =
@@ -50,10 +52,6 @@ pkgs =
     ("store", S.encode, fromRight' . S.decode),
     ("flat", F.flat, fromRight' . F.unflat)
   ]
-
-fromRight' :: Either a b -> b
-fromRight' (Left _) = undefined
-fromRight' (Right x) = x
 
 generateBalancedTree :: (Arbitrary a1) => Int -> IO (BinTree a1)
 generateBalancedTree = generateBalancedTree_ (generate arbitrary)

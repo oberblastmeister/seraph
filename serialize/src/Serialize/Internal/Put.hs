@@ -55,10 +55,6 @@ instance Exception PutException
 --         (# s#, () #) -> PR# s# (incPS# o# ps)
 -- {-# INLINE unsafeWithPutIO #-}
 
-arrSize :: Primitive.MutableByteArray s -> Int
-arrSize = Primitive.sizeofMutableByteArray
-{-# INLINE arrSize #-}
-
 throwST :: Exception e => e -> ST s a
 throwST = ST.Unsafe.unsafeIOToST . Exception.throwIO
 {-# NOINLINE throwST #-}

@@ -48,11 +48,12 @@ import Data.Sequence qualified as Seq
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
+import Data.Text qualified as T
 import Data.Text.Array qualified
 import Data.Text.Encoding qualified as Text.Encoding
 import Data.Text.Internal qualified
 import Data.Tree (Tree)
-import Data.Word (Word16, Word32, Word64, Word8, byteSwap32)
+import Data.Word (Word16, Word32, Word64, Word8)
 import Data.Word qualified as Word
 import Foreign qualified
 import GHC.Float qualified
@@ -419,22 +420,7 @@ instance Serialize Bool where
   {-# INLINE put #-}
   {-# INLINE get #-}
 
-instance Serialize Ordering where
-  type IsConstSize _ = True
-  size = size @Word8
-  put o = put @Word8 $ case o of
-    LT -> 0
-    EQ -> 1
-    GT -> 2
-  get =
-    get @Word8 <&> \case
-      0 -> LT
-      1 -> EQ
-      2 -> GT
-      _ -> undefined
-  {-# INLINE size #-}
-  {-# INLINE put #-}
-  {-# INLINE get #-}
+instance Serialize Ordering
 
 instance Serialize a => Serialize (Tree a)
 
@@ -444,32 +430,19 @@ instance (Serialize a, Serialize b, Serialize c) => Serialize (a, b, c)
 
 instance (Serialize a, Serialize b, Serialize c, Serialize d) => Serialize (a, b, c, d)
 
-instance Serialize a => Serialize (Maybe a) where
-  size m = size @Word8 + maybe 0 theSize m
-  put m = case m of
-    Nothing -> put @Word8 0
-    Just x -> put @Word8 1 <> put x
-  get =
-    get @Word8 >>= \case
-      0 -> pure Nothing
-      1 -> Just <$> get
-      _ -> impossible
+instance Serialize a => Serialize (Maybe a)
 
-instance (Serialize a, Serialize b) => Serialize (Either a b) where
-  size e = size @Word8 + either theSize theSize e
-  put e = case e of
-    Left x -> put @Word8 0 <> put x
-    Right x -> put @Word8 1 <> put x
-  get =
-    get @Word8 >>= \case
-      0 -> Left <$> get
-      1 -> Right <$> get
-      _ -> impossible
+instance (Serialize a, Serialize b) => Serialize (Either a b)
 
 instance Serialize a => Serialize [a] where
   size = sizeFoldable
   put = putFoldable
   get = reverse <$!> foldGet (:) []
+
+instance {-# OVERLAPPING #-} Serialize String where
+  size = size . T.pack
+  put = put . T.pack
+  get = T.unpack <$> get
 
 instance Serialize a => Serialize (NonEmpty a)
 
@@ -520,13 +493,11 @@ instance (Hashable a, Serialize a, Serialize b) => Serialize (HashMap a b) where
 
 instance Serialize Primitive.ByteArray where
   size bs = size @Int + Primitive.sizeofByteArray bs
-  {-# INLINE size #-}
   put bs = putByteArray 0 (Primitive.sizeofByteArray bs) bs
   get = getByteArray
 
 instance Serialize Text where
   size (Data.Text.Internal.Text _arr _off len) = size @Int + len
-  {-# INLINE size #-}
   put (Data.Text.Internal.Text (Data.Text.Array.ByteArray (Primitive.ByteArray -> arr)) off len) =
     putByteArray off len arr
   get = do
