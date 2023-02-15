@@ -8,12 +8,8 @@
 module BinTree where
 
 import Control.DeepSeq
-import Criterion.Main
-import Data.ByteString (ByteString)
-import Data.ByteString qualified as BS
 import Data.Store qualified as S
 import Data.Typeable (Typeable)
-import Dataset
 import Flat qualified as F
 import GHC.Generics (Generic)
 import Serialize

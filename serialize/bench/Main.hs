@@ -4,31 +4,27 @@
 import Control.DeepSeq
 import BinTree
 import Data.ByteString (ByteString)
-import Data.ByteString qualified as BS
 import Data.Store qualified as S
-import Data.Typeable (Typeable)
-import Dataset
 import Flat qualified as F
 import Criterion.Main
 import Serialize
 import Test.QuickCheck
+import Minecraft
 
 main :: IO ()
 main = do
   tree <- (generateBalancedTree 21 :: IO (BinTree Direction))
   let directionTree = ("BinTree Direction", tree)
-  !carsDataset <- ("Cars" :: String, ) <$> carsData
-  let tests = benchs carsDataset ++ benchs ("Iris Data", irisData) ++ benchs directionTree
+  players <- sample' $ resize 100 $ arbitrary @[Player]
+  let tests = benchs ("Players", players) ++ benchs directionTree
   defaultMain tests
 
 type C a =
   ( Eq a,
-    Typeable a,
     NFData a,
     F.Flat a,
     Serialize a,
     S.Store a,
-    Read a,
     Show a
   )
 
