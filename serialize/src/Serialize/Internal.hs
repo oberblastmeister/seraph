@@ -42,7 +42,6 @@ import Data.Map.Strict qualified as Map
 import Data.Monoid (Sum (..))
 import Data.Primitive (sizeOf)
 import Data.Primitive qualified as Primitive
-import Data.Primitive.ByteArray.Unaligned qualified as Unaligned
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
 import Data.Set (Set)
@@ -291,40 +290,6 @@ instance ByteOrder.FixedOrdering b => Serialize (ByteOrder.Fixed b Word) where
   {-# INLINE put #-}
   {-# INLINE get #-}
 
-newtype FloatBytes = FloatBytes {getFloatBytes :: Float}
-  deriving (Primitive.Prim, Unaligned.PrimUnaligned)
-
-newtype DoubleBytes = DoubleBytes {getDoubleBytes :: Double}
-  deriving (Primitive.Prim, Unaligned.PrimUnaligned)
-
-swapFloatBytes :: FloatBytes -> FloatBytes
-swapFloatBytes = FloatBytes #. GHC.Float.castWord32ToFloat . Word.byteSwap32 . GHC.Float.castFloatToWord32 .# getFloatBytes
-{-# INLINE swapFloatBytes #-}
-
-swapDoubleBytes :: DoubleBytes -> DoubleBytes
-swapDoubleBytes = DoubleBytes #. GHC.Float.castWord64ToDouble . Word.byteSwap64 . GHC.Float.castDoubleToWord64 .# getDoubleBytes
-{-# INLINE swapDoubleBytes #-}
-
-instance ByteOrder.Bytes FloatBytes where
-  toBigEndian = case ByteOrder.targetByteOrder of
-    ByteOrder.BigEndian -> id
-    ByteOrder.LittleEndian -> swapFloatBytes
-  toLittleEndian = case ByteOrder.targetByteOrder of
-    ByteOrder.LittleEndian -> id
-    ByteOrder.BigEndian -> swapFloatBytes
-  {-# INLINE toBigEndian #-}
-  {-# INLINE toLittleEndian #-}
-
-instance ByteOrder.Bytes DoubleBytes where
-  toBigEndian = case ByteOrder.targetByteOrder of
-    ByteOrder.BigEndian -> id
-    ByteOrder.LittleEndian -> swapDoubleBytes
-  toLittleEndian = case ByteOrder.targetByteOrder of
-    ByteOrder.LittleEndian -> id
-    ByteOrder.BigEndian -> swapDoubleBytes
-  {-# INLINE toBigEndian #-}
-  {-# INLINE toLittleEndian #-}
-
 instance Serialize (ByteOrder.Fixed ByteOrder.LittleEndian Float) where
   type IsConstSize _ = True
   size = sizeOf' @Word32
@@ -376,7 +341,7 @@ instance Serialize (ByteOrder.Fixed ByteOrder.BigEndian Double) where
   {-# INLINE size #-}
   {-# INLINE put #-}
   {-# INLINE get #-}
-
+  
 instance Serialize Char where
   type IsConstSize _ = True
   size = size @Int
@@ -530,9 +495,7 @@ instance Serialize ByteString where
     size <- getSize
     unsafeWithSizeGet size \arr i ->
       B.copy $! pinnedToByteString i size arr
-
--- instance Serialize BigNum
-
+      
 putByteArray :: Int -> Int -> Primitive.ByteArray -> Put
 putByteArray off len arr =
   putSize len <> unsafeWithSizedPut len \marr i ->
