@@ -79,7 +79,6 @@ common common-options
     -Werror=incomplete-record-updates
     -Wcpp-undef
     -Widentities
-    -O2
   build-depends:
     base >= 4.12 && <5,
     bytestring,
@@ -106,6 +105,7 @@ library
         Serialize.Internal.Exts
   include-dirs:
     include
+  ghc-options: -O2
   -- need to add this so it appears in cabal sdist
   -- makes haskell-ci work
   install-includes:

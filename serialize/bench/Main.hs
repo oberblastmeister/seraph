@@ -18,7 +18,8 @@ main = do
   tree <- (generateBalancedTree 21 :: IO (BinTree Direction))
   let directionTree = ("BinTree Direction", tree)
   !carsDataset <- ("Cars" :: String, ) <$> carsData
-  defaultMain (benchs carsDataset ++ benchs ("Iris Data", irisData) ++ benchs directionTree)
+  let tests = benchs carsDataset ++ benchs ("Iris Data", irisData) ++ benchs directionTree
+  defaultMain tests
 
 type C a =
   ( Eq a,
@@ -49,8 +50,8 @@ benchs (name, obj) =
 pkgs :: (C a) => [(String, a -> ByteString, ByteString -> a)]
 pkgs =
   [ 
-    ("store", S.encode, fromRight' . S.decode),
     ("serialize", encode, decode'),
+    ("store", S.encode, fromRight' . S.decode),
     ("flat", F.flat, fromRight' . F.unflat)
   ]
 

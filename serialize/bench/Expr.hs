@@ -64,6 +64,12 @@ serializeEncode = put
 storeEncode :: Expr -> S.Poke ()
 storeEncode = S.poke
 
+serializeDecode :: Get Expr
+serializeDecode = get
+
+storeDecode :: S.Peek Expr
+storeDecode = S.peek
+
 serializeSize :: Expr -> Int
 serializeSize = size
 

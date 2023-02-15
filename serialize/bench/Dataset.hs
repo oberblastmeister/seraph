@@ -1,20 +1,22 @@
+{-# OPTIONS_GHC -Wno-orphans #-}
 {-# OPTIONS_GHC -ddump-simpl
 -ddump-to-file
 -dsuppress-module-prefixes
 -dsuppress-coercions
 -dsuppress-idinfo #-}
-{-# OPTIONS_GHC -Wno-orphans #-}
+
 module Dataset where
 
 import Control.DeepSeq
+import Data.ByteString (ByteString)
 import Data.Store qualified as S
 import Flat qualified as F
-import Numeric.Datasets.Car
-import Serialize
-import Numeric.Datasets
-import Numeric.Datasets.Iris
+import Flat.Decoder qualified as F
 import Network.HTTP.Req
-import qualified Flat.Decoder as F
+import Numeric.Datasets
+import Numeric.Datasets.Car
+import Numeric.Datasets.Iris
+import Serialize
 
 {- ORMOLU_DISABLE -}
 instance NFData Count
@@ -61,6 +63,12 @@ serializeSize = size
 flatDecode :: F.Get Car
 flatDecode = F.decode
 
+serializeEncode :: [Car] -> ByteString
+serializeEncode = encode
+
+storeEncode :: [Car] -> ByteString
+storeEncode = S.encode
+
 serializeDecode :: Get Car
 serializeDecode = get
 
@@ -75,6 +83,16 @@ storeDecode2 = S.peek
 
 by :: Int -> [a] -> [a]
 by n = concat . replicate n
+
+-- -- | The UCI machine learning database
+-- uciMLDB :: Url 'Https
+-- uciMLDB = https "archive.ics.uci.edu" /: "ml" /: "machine-learning-databases"
+
+-- url :: String
+-- url = "https://archive.ics.uci.edu/ml/machine-learning-databases/car/car.data"
+
+-- carsData :: IO [Car]
+-- carsData = by 1000 <$> getDataset car {source = URL url}
 
 carsData :: IO [Car]
 carsData = by 1000 <$> getDataset car {source = URL $ uciMLDB /: "car" /: "car.data"}

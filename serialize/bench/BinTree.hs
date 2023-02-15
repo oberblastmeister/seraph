@@ -3,7 +3,7 @@
 -ddump-to-file
 -dsuppress-module-prefixes
 -dsuppress-coercions
--dsuppress-idinfo #-}
+#-}
 
 module BinTree where
 

@@ -67,24 +67,22 @@ f <!$!> m = do
   pure $! f x
 {-# INLINE (<!$!>) #-}
 
-unpackByteString# :: ByteString -> (# Primitive.ByteArray#, Int#, Int# #)
+unpackByteString# :: ByteString -> ( Primitive.ByteArray, Int, Int )
 unpackByteString# bs@(B.Internal.PS (ForeignPtr (Primitive.Ptr -> p) fpc) o l) =
-  (# arr#, off#, len# #)
-  where
-    !(Primitive.ByteArray arr#, I# off#, I# len#) = unsafeDupablePerformIO $ case fpc of
+ unsafeDupablePerformIO $ case fpc of
+  PlainPtr (Primitive.MutableByteArray -> marr) -> do
+    let base = Primitive.mutableByteArrayContents marr
+        off = p `Foreign.minusPtr` base
+    arr <- Primitive.unsafeFreezeByteArray marr
+    pure (arr, off + o, off + o + l)
+  _ -> case B.copy bs of
+    B.Internal.PS (ForeignPtr (Primitive.Ptr -> p) fpc) o l -> case fpc of
       PlainPtr (Primitive.MutableByteArray -> marr) -> do
         let base = Primitive.mutableByteArrayContents marr
             off = p `Foreign.minusPtr` base
         arr <- Primitive.unsafeFreezeByteArray marr
         pure (arr, off + o, off + o + l)
-      _ -> case B.copy bs of
-        B.Internal.PS (ForeignPtr (Primitive.Ptr -> p) fpc) o l -> case fpc of
-          PlainPtr (Primitive.MutableByteArray -> marr) -> do
-            let base = Primitive.mutableByteArrayContents marr
-                off = p `Foreign.minusPtr` base
-            arr <- Primitive.unsafeFreezeByteArray marr
-            pure (arr, off + o, off + o + l)
-          _ -> error "should be PlainPtr"
+      _ -> error "should be PlainPtr"
 
 pinnedToByteString :: Int -> Int -> Primitive.ByteArray -> ByteString
 pinnedToByteString off len bs@(Primitive.ByteArray b#)

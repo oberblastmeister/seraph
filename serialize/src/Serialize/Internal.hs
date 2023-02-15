@@ -3,14 +3,21 @@
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# OPTIONS_GHC -ddump-simpl
+-ddump-to-file
+-dsuppress-module-prefixes
+-dsuppress-coercions
+#-}
 
 {-# HLINT ignore "Redundant bracket" #-}
 {-# HLINT ignore "Use if" #-}
+{-# HLINT ignore "Redundant lambda" #-}
 
 module Serialize.Internal where
 
 import Control.Exception qualified as Exception
 import Control.Monad ((<$!>))
+import Control.Monad qualified as Monad
 import Control.Monad.ST (runST)
 import Data.Bifoldable (Bifoldable, bifoldMap)
 import Data.ByteString (ByteString)
@@ -19,7 +26,7 @@ import Data.ByteString.Internal qualified as B.Internal
 import Data.ByteString.Short (ShortByteString)
 import Data.ByteString.Short qualified as SBS
 import Data.Char qualified as Char
-import Data.Foldable (foldMap', foldlM)
+import Data.Foldable (foldl', foldlM, foldMap')
 import Data.Functor ((<&>))
 import Data.HashMap.Internal qualified as HashMap.Internal
 import Data.HashMap.Strict (HashMap)
@@ -33,7 +40,6 @@ import Data.IntSet qualified as IntSet
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Monoid (Sum (..))
 import Data.Primitive (sizeOf)
 import Data.Primitive qualified as Primitive
 import Data.Sequence (Seq)
@@ -59,6 +65,7 @@ import Serialize.Internal.Put
 import Serialize.Internal.Util
 import System.ByteOrder qualified as ByteOrder
 import System.IO.Unsafe qualified as IO.Unsafe
+import Data.Monoid (Sum(..))
 
 #include "serialize.h"
 
@@ -404,10 +411,12 @@ instance Serialize a => Serialize (Seq a) where
   get = foldGet (flip (Seq.|>)) Seq.empty
 
 instance Serialize IntSet where
-  size is = size @Int + size @Int * IntSet.size is
-  put is =
-    putSize (IntSet.size is)
-      <> IntSet.foldr (mappend . put) mempty is
+  size = sizeFoldableWith IntSet.size IntSet.foldl'
+  put is = putFoldableWith (IntSet.size is) foldlM is
+    where
+      foldlM f z0 xs = IntSet.foldr c return xs z0
+        where
+          c x k z = f z x >>= k
   get = foldGet IntSet.insert IntSet.empty
 
 instance Serialize a => Serialize (IntMap a) where
@@ -454,7 +463,7 @@ instance Serialize Text where
     putByteArray off len arr
   get = do
     size <- getSize
-    unsafeWithGet size \arr i -> do
+    unsafeWithSizeGet size \arr i -> do
       -- can't use getByteArray here because we need to ensure it is UTF-8
       -- wait for text to allow decoding UTF-8 from ByteArray
       Text.Encoding.decodeUtf8 $! pinnedToByteString i size arr
@@ -474,38 +483,44 @@ instance Serialize ByteString where
   size bs = size @Int + (B.length bs)
   {-# INLINE size #-}
   put (B.Internal.PS fp off len) =
-    putSize len <> unsafeWithPutIO len \marr i ->
+    putSize len <> unsafeWithSizedPutIO len \marr i ->
       Foreign.withForeignPtr fp \p -> do
         let p' :: Primitive.Ptr Word8 = p `Foreign.plusPtr` off
         Primitive.copyPtrToMutableByteArray marr i p' len
   get = do
     size <- getSize
-    unsafeWithGet size \arr i ->
+    unsafeWithSizeGet size \arr i ->
       B.copy $! pinnedToByteString i size arr
 
 -- instance Serialize BigNum
 
 putByteArray :: Int -> Int -> Primitive.ByteArray -> Put
 putByteArray off len arr =
-  putSize len <> unsafeWithPut len \marr i ->
+  putSize len <> unsafeWithSizedPut len \marr i ->
     Primitive.copyByteArray marr i arr off len
 {-# INLINE putByteArray #-}
 
 getByteArray :: Get Primitive.ByteArray
 getByteArray = do
   len <- getSize
-  unsafeWithGet len \arr i -> runST $ do
+  unsafeWithSizeGet len \arr i -> runST $ do
     marr <- Primitive.newByteArray len
     Primitive.copyByteArray marr 0 arr i len
     Primitive.unsafeFreezeByteArray marr
 {-# INLINE getByteArray #-}
 
+type Foldl s a = forall b. (b -> a -> b) -> b -> s -> b
+
 sizeFoldable :: forall a f. (Serialize a, Foldable f) => f a -> Int
-sizeFoldable xs =
+sizeFoldable = sizeFoldableWith length foldl'
+{-# INLINE sizeFoldable #-}
+
+sizeFoldableWith :: forall a s. (Serialize a) => (s -> Int) -> Foldl s a -> s -> Int
+sizeFoldableWith length foldl' = \xs ->
   size @Int + case isPrim @a of
     STrue -> size @a * length xs
-    SFalse -> getSum $ foldMap' (Sum #. size) xs
-{-# INLINE sizeFoldable #-}
+    SFalse -> foldl' (\z x -> z + size x) 0 xs
+{-# INLINE sizeFoldableWith #-}
 
 putSize :: Int -> Put
 putSize = put
@@ -515,12 +530,16 @@ getSize :: Get Int
 getSize = get
 {-# INLINE getSize #-}
 
-putFoldableWith :: (Serialize a, Foldable f) => Int -> f a -> Put
-putFoldableWith len xs = putSize len <> foldMap put xs
+type FoldM s a = forall m b. (Monad m) => (b -> a -> m b) -> b -> s -> m b
+
+putFoldableWith :: (Serialize a) => Int -> FoldM s a -> s -> Put
+putFoldableWith len foldM xs =
+  put len <> Put# \marr i -> do
+    foldM (\i x -> runPut# (put x) marr i) i xs
 {-# INLINE putFoldableWith #-}
 
 putFoldable :: (Serialize a, Foldable f) => f a -> Put
-putFoldable xs = putFoldableWith (length xs) xs
+putFoldable = \xs -> putFoldableWith (length xs) foldlM xs
 {-# INLINE putFoldable #-}
 
 putBifoldable :: (Serialize a, Serialize b, Bifoldable f, Foldable (f a)) => f a b -> Put
@@ -545,9 +564,8 @@ foldGet2 f z = do
 
 encodeIO :: Serialize a => a -> IO ByteString
 encodeIO x = do
-  marr@(Primitive.MutableByteArray marr#) <- Primitive.newPinnedByteArray sz
-  IO \s# -> case runPut# (put x) (PE# marr#) (PS# 0#) s# of
-    PR# s# _ -> (# s#, () #)
+  marr <- Primitive.newPinnedByteArray sz
+  Monad.void $ runPut# (put x) marr 0
   pinnedToByteString 0 sz <$!> Primitive.unsafeFreezeByteArray marr
   where
     sz = theSize x
@@ -557,10 +575,10 @@ encode = IO.Unsafe.unsafeDupablePerformIO . encodeIO
 
 decodeIO :: Serialize a => ByteString -> IO a
 decodeIO bs = do
-  IO \s# -> case runGet# get (GE# arr# l#) (GS# i#) s# of
-    GR# s# _ x -> (# s#, x #)
+  GR _ x <- runGet# get (GE arr l) i
+  pure x
   where
-    !(# arr#, i#, l# #) = unpackByteString# bs
+    !(arr, i, l) = unpackByteString# bs
 
 decode :: Serialize a => ByteString -> Either GetException a
 decode = IO.Unsafe.unsafeDupablePerformIO . Exception.try . decodeIO

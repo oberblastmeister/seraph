@@ -3,57 +3,26 @@ module Serialize.Internal.Put where
 import Control.Exception (Exception)
 import Control.Exception qualified as Exception
 import Control.Monad.ST (ST, stToIO)
-import Data.Primitive (MutableByteArray#, Prim)
+import Control.Monad.ST.Unsafe qualified as ST.Unsafe
+import Data.Functor (($>))
+import Data.Primitive (Prim)
 import Data.Primitive qualified as Primitive
-import Data.Primitive.ByteArray.Unaligned (PrimUnaligned (..), writeUnalignedByteArray)
-import GHC.Exts (getSizeofMutableByteArray#)
+import Data.Primitive.ByteArray.Unaligned (PrimUnaligned (..))
+import Data.Primitive.ByteArray.Unaligned qualified as Unaligned
 import Serialize.Internal.Exts
 import Serialize.Internal.Util
 
 -- Note: Because everything is unboxed there are a lot more arguments to the function
 -- This makes recursive calls more expensive
 newtype Put :: Type where
-  Put# ::
-    { runPut# ::
-        PE# ->
-        PS# ->
-        S# ->
-        PR#
-    } ->
-    Put
-
-newtype PE# = PE## (# MutableByteArray# RealWorld #)
-
-newtype PS# = PutState# (# Int# #)
-
-newtype PR# = PR## (# S#, PS# #)
-
-pattern PE# :: MutableByteArray# RealWorld -> PE#
-pattern PE# marr# = PE## (# marr# #)
-
-pattern PS# :: Int# -> PS#
-pattern PS# x = PutState# (# x #)
-
-pattern PR# :: S# -> PS# -> PR#
-pattern PR# s# ps# = PR## (# s#, ps# #)
-
-{-# COMPLETE PS# #-}
-
-{-# COMPLETE PE# #-}
-
-{-# COMPLETE PR# #-}
-
-incPS# :: Int# -> PS# -> PS#
-incPS# i# (PS# x#) = PS# (i# +# x#)
-{-# INLINE incPS# #-}
+  Put# :: {runPut# :: Primitive.MutableByteArray RealWorld -> Int -> IO Int} -> Put
 
 instance Semigroup Put where
-  Put# p1 <> Put# p2 = Put# \marr# ps# s# -> case p1 marr# ps# s# of
-    PR# s# ps# -> p2 marr# ps# s#
+  Put# p1 <> Put# p2 = Put# \marr i -> p1 marr i >>= p2 marr
   {-# INLINE (<>) #-}
 
 instance Monoid Put where
-  mempty = Put# \_marr# ps# s# -> PR# s# ps#
+  mempty = Put# \_marr i -> pure i
   {-# INLINE mempty #-}
 
 data PutException
@@ -62,27 +31,55 @@ data PutException
 
 instance Exception PutException
 
-throwPut :: Exception e => e -> Put
-throwPut e = Put# \_ ps# s# -> case runIO# (Exception.throwIO e) s# of
-  (# s#, _ #) -> PR# s# ps#
-{-# NOINLINE throwPut #-}
+-- throwPut :: Exception e => e -> Put
+-- throwPut :: Except
+-- throwPut e = Put# \_ ps# s# -> case runIO# (Exception.throwIO e) s# of
+--   (# s#, _ #) -> PR# s# ps#
+-- {-# NOINLINE throwPut #-}
 
 -- Even more unsafe!
 -- Used because ByteString stuff uses IO instead of ST
 -- Just don't shoot the missiles in here!
-unsafeWithPutIO :: Int -> (Primitive.MutableByteArray RealWorld -> Int -> IO ()) -> Put
-unsafeWithPutIO (I# o#) f = Put# \(PE# marr#) ps@(PS# i#) s# -> case getSizeofMutableByteArray# marr# s# of
-  (# s#, l# #) -> case i# +# o# ># l# of
-    1# -> case runIO# (Exception.throwIO $ IndexOutOfBounds (I# (i# +# o#)) (I# l#)) s# of
-      (# s#, _ #) -> PR# s# ps
-    _ -> case runIO# (f (Primitive.MutableByteArray marr#) (I# i#)) s# of
-      (# s#, () #) -> PR# s# (incPS# o# ps)
-{-# INLINE unsafeWithPutIO #-}
+-- unsafeWithPutIO :: Int -> (Primitive.MutableByteArray RealWorld -> Int -> IO Int) -> Put
+-- unsafeWithPutIO = Put#
+-- unsafeWithPutIO (I# o#) f = Put# \(PE# marr#) ps@(PS# i#) s# ->
+--   case runIO# (f (Primitive.MutableByteArray marr#) (I# i#)) s# of
+--     (# s#, () #) -> PR# s# (incPS# o# ps)
+-- unsafeWithPutIO (I# o#) f = Put# \(PE# marr#) ps@(PS# i#) s# ->
+--   case getSizeofMutableByteArray# marr# s# of
+--     (# s#, l# #) -> case i# +# o# ># l# of
+--       1# -> case runIO# (Exception.throwIO $ IndexOutOfBounds (I# (i# +# o#)) (I# l#)) s# of
+--         (# s#, _ #) -> PR# s# ps
+--       _ ->
+--         case runIO# (f (Primitive.MutableByteArray marr#) (I# i#)) s# of
+--         (# s#, () #) -> PR# s# (incPS# o# ps)
+-- {-# INLINE unsafeWithPutIO #-}
 
-unsafeWithPut :: Int -> (forall s. Primitive.MutableByteArray s -> Int -> ST s ()) -> Put
-unsafeWithPut o f = unsafeWithPutIO o (\marr i -> stToIO (f marr i))
+arrSize :: Primitive.MutableByteArray s -> Int
+arrSize = Primitive.sizeofMutableByteArray
+{-# INLINE arrSize #-}
+
+throwST :: Exception e => e -> ST s a
+throwST = ST.Unsafe.unsafeIOToST . Exception.throwIO
+{-# NOINLINE throwST #-}
+
+unsafeWithPut :: (forall s. Primitive.MutableByteArray s -> Int -> ST s Int) -> Put
+unsafeWithPut f = Put# (\marr i -> stToIO (f marr i))
 {-# INLINE unsafeWithPut #-}
 
+unsafeWithSizedPutIO :: Int -> (Primitive.MutableByteArray RealWorld -> Int -> IO ()) -> Put
+unsafeWithSizedPutIO len f = Put# \marr i -> do
+  let i' = len + i
+  let l = Primitive.sizeofMutableByteArray marr
+  if i' <= l
+    then f marr i $> i'
+    else Exception.throwIO $ IndexOutOfBounds i' l
+{-# INLINE unsafeWithSizedPutIO #-}
+
+unsafeWithSizedPut :: Int -> (forall s. Primitive.MutableByteArray s -> Int -> ST s ()) -> Put
+unsafeWithSizedPut len f = unsafeWithSizedPutIO len \marr i -> stToIO (f marr i)
+{-# INLINE unsafeWithSizedPut #-}
+
 putPrim :: forall a. (Prim a, PrimUnaligned a) => a -> Put
-putPrim x = unsafeWithPut (sizeOf' @a) \marr i -> writeUnalignedByteArray marr i x
+putPrim x = unsafeWithSizedPut (sizeOf' @a) \marr i -> Unaligned.writeUnalignedByteArray marr i x
 {-# INLINE putPrim #-}
