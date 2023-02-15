@@ -6,8 +6,7 @@
 {-# OPTIONS_GHC -ddump-simpl
 -ddump-to-file
 -dsuppress-module-prefixes
--dsuppress-coercions
-#-}
+-dsuppress-coercions #-}
 
 {-# HLINT ignore "Redundant bracket" #-}
 {-# HLINT ignore "Use if" #-}
@@ -26,7 +25,7 @@ import Data.ByteString.Internal qualified as B.Internal
 import Data.ByteString.Short (ShortByteString)
 import Data.ByteString.Short qualified as SBS
 import Data.Char qualified as Char
-import Data.Foldable (foldl', foldlM, foldMap')
+import Data.Foldable (foldMap', foldl', foldlM)
 import Data.Functor ((<&>))
 import Data.HashMap.Internal qualified as HashMap.Internal
 import Data.HashMap.Strict (HashMap)
@@ -40,8 +39,10 @@ import Data.IntSet qualified as IntSet
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Monoid (Sum (..))
 import Data.Primitive (sizeOf)
 import Data.Primitive qualified as Primitive
+import Data.Primitive.ByteArray.Unaligned qualified as Unaligned
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
 import Data.Set (Set)
@@ -51,7 +52,8 @@ import Data.Text.Array qualified
 import Data.Text.Encoding qualified as Text.Encoding
 import Data.Text.Internal qualified
 import Data.Tree (Tree)
-import Data.Word (Word16, Word32, Word64, Word8)
+import Data.Word (Word16, Word32, Word64, Word8, byteSwap32)
+import Data.Word qualified as Word
 import Foreign qualified
 import GHC.Float qualified
 import GHC.Generics (Generic)
@@ -65,7 +67,6 @@ import Serialize.Internal.Put
 import Serialize.Internal.Util
 import System.ByteOrder qualified as ByteOrder
 import System.IO.Unsafe qualified as IO.Unsafe
-import Data.Monoid (Sum(..))
 
 #include "serialize.h"
 
@@ -289,21 +290,88 @@ instance ByteOrder.FixedOrdering b => Serialize (ByteOrder.Fixed b Word) where
   {-# INLINE put #-}
   {-# INLINE get #-}
 
--- TODO: optimize this so that we don't have to do ffi call when same endianness
-instance ByteOrder.FixedOrdering b => Serialize (ByteOrder.Fixed b Float) where
+newtype FloatBytes = FloatBytes {getFloatBytes :: Float}
+  deriving (Primitive.Prim, Unaligned.PrimUnaligned)
+
+newtype DoubleBytes = DoubleBytes {getDoubleBytes :: Double}
+  deriving (Primitive.Prim, Unaligned.PrimUnaligned)
+
+swapFloatBytes :: FloatBytes -> FloatBytes
+swapFloatBytes = FloatBytes #. GHC.Float.castWord32ToFloat . Word.byteSwap32 . GHC.Float.castFloatToWord32 .# getFloatBytes
+{-# INLINE swapFloatBytes #-}
+
+swapDoubleBytes :: DoubleBytes -> DoubleBytes
+swapDoubleBytes = DoubleBytes #. GHC.Float.castWord64ToDouble . Word.byteSwap64 . GHC.Float.castDoubleToWord64 .# getDoubleBytes
+{-# INLINE swapDoubleBytes #-}
+
+instance ByteOrder.Bytes FloatBytes where
+  toBigEndian = case ByteOrder.targetByteOrder of
+    ByteOrder.BigEndian -> id
+    ByteOrder.LittleEndian -> swapFloatBytes
+  toLittleEndian = case ByteOrder.targetByteOrder of
+    ByteOrder.LittleEndian -> id
+    ByteOrder.BigEndian -> swapFloatBytes
+  {-# INLINE toBigEndian #-}
+  {-# INLINE toLittleEndian #-}
+
+instance ByteOrder.Bytes DoubleBytes where
+  toBigEndian = case ByteOrder.targetByteOrder of
+    ByteOrder.BigEndian -> id
+    ByteOrder.LittleEndian -> swapDoubleBytes
+  toLittleEndian = case ByteOrder.targetByteOrder of
+    ByteOrder.LittleEndian -> id
+    ByteOrder.BigEndian -> swapDoubleBytes
+  {-# INLINE toBigEndian #-}
+  {-# INLINE toLittleEndian #-}
+
+instance Serialize (ByteOrder.Fixed ByteOrder.LittleEndian Float) where
   type IsConstSize _ = True
   size = sizeOf' @Word32
-  put = put . ByteOrder.Fixed @b #. GHC.Float.castFloatToWord32 .# ByteOrder.getFixed @b
-  get = (ByteOrder.Fixed @b #. GHC.Float.castWord32ToFloat .# ByteOrder.getFixed @b) <$!> get
+  put = case ByteOrder.targetByteOrder of
+    ByteOrder.LittleEndian -> putPrim .# ByteOrder.getFixed
+    ByteOrder.BigEndian -> put . GHC.Float.castFloatToWord32 .# ByteOrder.getFixed
+  get = case ByteOrder.targetByteOrder of
+    ByteOrder.LittleEndian -> coerce @(Get Float) @(Get (ByteOrder.Fixed ByteOrder.LittleEndian Float)) getPrim
+    ByteOrder.BigEndian -> (ByteOrder.Fixed #. GHC.Float.castWord32ToFloat . Word.byteSwap32) <$!> get
   {-# INLINE size #-}
   {-# INLINE put #-}
   {-# INLINE get #-}
 
-instance ByteOrder.FixedOrdering b => Serialize (ByteOrder.Fixed b Double) where
+instance Serialize (ByteOrder.Fixed ByteOrder.BigEndian Float) where
+  type IsConstSize _ = True
+  size = sizeOf' @Word32
+  put = case ByteOrder.targetByteOrder of
+    ByteOrder.BigEndian -> putPrim .# ByteOrder.getFixed
+    ByteOrder.LittleEndian -> put . GHC.Float.castFloatToWord32 .# ByteOrder.getFixed
+  get = case ByteOrder.targetByteOrder of
+    ByteOrder.BigEndian -> coerce @(Get Float) @(Get (ByteOrder.Fixed ByteOrder.BigEndian Float)) getPrim
+    ByteOrder.LittleEndian -> (ByteOrder.Fixed #. GHC.Float.castWord32ToFloat . Word.byteSwap32) <$!> get
+  {-# INLINE size #-}
+  {-# INLINE put #-}
+  {-# INLINE get #-}
+
+instance Serialize (ByteOrder.Fixed ByteOrder.LittleEndian Double) where
   type IsConstSize _ = True
   size = sizeOf' @Word64
-  put = put . ByteOrder.Fixed @b #. GHC.Float.castDoubleToWord64 .# ByteOrder.getFixed @b
-  get = (ByteOrder.Fixed @b #. GHC.Float.castWord64ToDouble .# ByteOrder.getFixed @b) <$!> get
+  put = case ByteOrder.targetByteOrder of
+    ByteOrder.LittleEndian -> putPrim .# ByteOrder.getFixed
+    ByteOrder.BigEndian -> put . GHC.Float.castDoubleToWord64 .# ByteOrder.getFixed
+  get = case ByteOrder.targetByteOrder of
+    ByteOrder.LittleEndian -> coerce @(Get Double) @(Get (ByteOrder.Fixed ByteOrder.LittleEndian Double)) getPrim
+    ByteOrder.BigEndian -> (ByteOrder.Fixed #. GHC.Float.castWord64ToDouble . Word.byteSwap64) <$!> get
+  {-# INLINE size #-}
+  {-# INLINE put #-}
+  {-# INLINE get #-}
+
+instance Serialize (ByteOrder.Fixed ByteOrder.BigEndian Double) where
+  type IsConstSize _ = True
+  size = sizeOf' @Word64
+  put = case ByteOrder.targetByteOrder of
+    ByteOrder.BigEndian -> putPrim .# ByteOrder.getFixed
+    ByteOrder.LittleEndian -> put . GHC.Float.castDoubleToWord64 .# ByteOrder.getFixed
+  get = case ByteOrder.targetByteOrder of
+    ByteOrder.BigEndian -> coerce @(Get Double) @(Get (ByteOrder.Fixed ByteOrder.BigEndian Double)) getPrim
+    ByteOrder.LittleEndian -> (ByteOrder.Fixed #. GHC.Float.castWord64ToDouble . Word.byteSwap64) <$!> get
   {-# INLINE size #-}
   {-# INLINE put #-}
   {-# INLINE get #-}

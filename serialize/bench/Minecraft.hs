@@ -1,3 +1,8 @@
+{-# OPTIONS_GHC -ddump-simpl
+-ddump-to-file
+-dsuppress-module-prefixes
+-dsuppress-coercions
+-dsuppress-idinfo #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE StrictData #-}
@@ -12,9 +17,10 @@ import Data.Word
 import Flat qualified as F
 import GHC.Generics (Generic)
 import Generic.Random (GenericArbitrarySingle (..), GenericArbitraryU(..))
-import Serialize (Serialize)
+import Serialize (Serialize, encode)
 import Test.QuickCheck (Arbitrary)
 import Test.QuickCheck.Instances ()
+import Data.ByteString (ByteString)
 
 data GameType
   = Survival
@@ -28,7 +34,7 @@ data Item
   = Item
       Int8
       Word8
-      String
+      Text
   deriving (Show, Eq, Generic, NFData, Serialize, S.Store, F.Flat)
   deriving (Arbitrary) via GenericArbitrarySingle Item
 
@@ -61,7 +67,7 @@ data RecipeBook
 
 data Entity
   = Entity
-      String
+      Text
       (Double, Double, Double)
       (Double, Double, Double)
       (Float, Float)
@@ -112,3 +118,9 @@ data Player
       RecipeBook
   deriving (Show, Eq, Generic, NFData, Serialize, S.Store, F.Flat)
   deriving (Arbitrary) via GenericArbitrarySingle Player
+
+serializeEncode :: Player -> ByteString
+serializeEncode = encode
+
+storeEncode :: Player -> ByteString
+storeEncode = S.encode
