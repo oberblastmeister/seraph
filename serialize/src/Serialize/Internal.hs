@@ -85,9 +85,9 @@ instance KnownBool False where
   boolSing = SFalse
   {-# INLINE boolSing #-}
 
-isPrim :: forall a. (Serialize a) => SBool (IsConstSize a)
-isPrim = boolSing @(IsConstSize a)
-{-# INLINE isPrim #-}
+isConstSize :: forall a. (Serialize a) => SBool (IsConstSize a)
+isConstSize = boolSing @(IsConstSize a)
+{-# INLINE isConstSize #-}
 
 type family ConstSize b a = r | r -> b where
   ConstSize True _ = Int
@@ -105,7 +105,7 @@ class KnownBool (IsConstSize a) => Serialize a where
   default size :: (Generic a, GSerializeSize (G.Rep a), IsConstSize a ~ False) => ConstSize (IsConstSize a) a
   size x = gSize# (G.from x)
 
-  theSize x = case isPrim @a of
+  theSize x = case isConstSize @a of
     STrue -> size @a
     SFalse -> size x
   {-# INLINE theSize #-}
@@ -427,7 +427,7 @@ instance Serialize IntSet where
 
 instance Serialize a => Serialize (IntMap a) where
   size xs =
-    size @Int + case isPrim @a of
+    size @Int + case isConstSize @a of
       STrue -> (size @Int + size @a) * IntMap.size xs
       SFalse -> getSum $ foldMap' (\x -> Sum (size @Int + size x)) xs
   put im =
@@ -442,7 +442,7 @@ instance (Ord a, Serialize a) => Serialize (Set a) where
 
 instance (Ord a, Serialize a, Serialize b) => Serialize (Map a b) where
   size m =
-    size @Int + case (isPrim @a, isPrim @b) of
+    size @Int + case (isConstSize @a, isConstSize @b) of
       (STrue, STrue) -> (size @a + size @b) * Map.size m
       (_, _) -> Map.foldlWithKey' (\s k x -> s + theSize @a k + theSize @b x) 0 m
   put m = putSize (Map.size m) <> Map.foldMapWithKey (\k x -> put k <> put x) m
@@ -450,7 +450,7 @@ instance (Ord a, Serialize a, Serialize b) => Serialize (Map a b) where
 
 instance (Hashable a, Serialize a, Serialize b) => Serialize (HashMap a b) where
   size m =
-    size @Int + case (isPrim @a, isPrim @b) of
+    size @Int + case (isConstSize @a, isConstSize @b) of
       (STrue, STrue) -> (size @a + size @b) * HashMap.size m
       (_, _) -> HashMap.foldlWithKey' (\s k x -> s + theSize @a k + theSize @b x) 0 m
   put m = put @Int (HashMap.size m) <> HashMap.foldMapWithKey (\k x -> put k <> put x) m
@@ -519,7 +519,7 @@ sizeFoldable = sizeFoldableWith length foldl'
 
 sizeFoldableWith :: forall a s. (Serialize a) => (s -> Int) -> Foldl s a -> s -> Int
 sizeFoldableWith length foldl' = \xs ->
-  size @Int + case isPrim @a of
+  size @Int + case isConstSize @a of
     STrue -> size @a * length xs
     SFalse -> foldl' (\z x -> z + size x) 0 xs
 {-# INLINE sizeFoldableWith #-}
