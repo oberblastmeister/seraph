@@ -1,13 +1,8 @@
-cabal-version:      3.6
-name:               serialize
-version:            0.1.0.0
-
--- A short (one-line) description of the package.
--- synopsis:
-
--- A longer description of the package.
--- description:
-
+cabal-version: 3.6
+name: serialize
+version: 0.1.0.0
+synopsis: Fast serialization
+description: A fast and light serialization library
 -- A URL where users can report bugs.
 -- bug-reports:
 
@@ -90,7 +85,6 @@ common common-options
     primitive,
     primitive-unaligned,
     byte-order,
-    ghc-bignum,
 
 library
   import: common-options
@@ -144,6 +138,7 @@ benchmark bench
     Expr
     Minecraft
     Cars
+    Testing
   ghc-options: -O2
   build-depends:
     QuickCheck,
