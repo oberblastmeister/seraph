@@ -55,9 +55,7 @@ common common-options
     TypeOperators,
     BlockArguments,
     ImportQualifiedPost,
-
     MagicHash,
-    UnliftedNewtypes,
     UnboxedTuples,
     UnboxedSums,
   ghc-options:
