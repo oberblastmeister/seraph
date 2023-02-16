@@ -410,7 +410,7 @@ instance Serialize a => Serialize [a] where
 instance {-# OVERLAPPING #-} Serialize String where
   size = size . T.pack
   put = put . T.pack
-  get = T.unpack <$> get
+  get = T.unpack <$!> get
 
 instance Serialize a => Serialize (NonEmpty a)
 
