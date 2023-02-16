@@ -1,5 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module RoundTripSpec where
 
@@ -13,10 +14,12 @@ import Data.IntSet (IntSet)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map.Strict (Map)
 import Data.Primitive (ByteArray)
+import Data.Primitive qualified as Primitive
 import Data.Sequence (Seq)
 import Data.Set (Set)
 import Data.Text (Text)
 import Data.Tree (Tree)
+import Data.Vector qualified as VB
 import Data.Word (Word8)
 import Serialize
 import Test.Hspec
@@ -26,6 +29,9 @@ import Test.QuickCheck.Instances ()
 
 serializeProp :: forall a. (Serialize a, Eq a, Show a, Arbitrary a) => Property
 serializeProp = property \(x :: a) -> decode' (encode x) === x
+
+instance Arbitrary a => Arbitrary (Primitive.Array a) where
+  arbitrary = Primitive.fromList <$> arbitrary
 
 props :: [Property]
 props =
@@ -57,7 +63,11 @@ props =
     serializeProp @(Set Int),
     serializeProp @(Set Text),
     serializeProp @(HashMap Int Int),
-    serializeProp @(HashMap Int Text)
+    serializeProp @(HashMap Int Text),
+    serializeProp @(VB.Vector Int),
+    serializeProp @(VB.Vector ByteString),
+    serializeProp @(Primitive.Array Int),
+    serializeProp @(Primitive.Array ByteString)
   ]
 
 spec :: Spec

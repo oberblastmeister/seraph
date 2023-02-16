@@ -2,12 +2,14 @@ module Serialize.Internal.Get where
 
 import Control.Exception (Exception)
 import Control.Exception qualified as Exception
+import Control.Monad.ST (ST)
 import Data.Primitive
 import Data.Primitive qualified as Primitive
 import Data.Primitive.ByteArray.Unaligned (PrimUnaligned (..))
 import Data.Primitive.ByteArray.Unaligned qualified as Unaligned
 import Serialize.Internal.Exts
 import Serialize.Internal.Util
+import qualified Control.Monad.ST.Unsafe as ST.Unsafe
 
 newtype Get :: Type -> Type where
   Get# :: {runGet# :: GE -> Int -> IO (GR a)} -> Get a
@@ -48,6 +50,14 @@ instance Show GetException where
   show (InvalidSumTag tag) = "Invalid sum tag: " ++ show tag
 
 instance Exception GetException
+
+unsafeLiftIO :: IO a -> Get a
+unsafeLiftIO m = Get# \_ i -> GR i <$> m
+{-# INLINE unsafeLiftIO #-}
+
+unsafeLiftST :: ST s a -> Get a
+unsafeLiftST m = unsafeLiftIO (ST.Unsafe.unsafeSTToIO m)
+{-# INLINE unsafeLiftST #-}
 
 unsafeWithSizeGet :: Int -> (Primitive.ByteArray -> Int -> a) -> Get a
 unsafeWithSizeGet o f = Get# \(GE arr l) i -> do

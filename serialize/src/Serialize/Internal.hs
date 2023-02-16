@@ -17,7 +17,7 @@ module Serialize.Internal where
 import Control.Exception qualified as Exception
 import Control.Monad ((<$!>))
 import Control.Monad qualified as Monad
-import Control.Monad.ST (runST)
+import Control.Monad.ST (ST, runST)
 import Data.Bifoldable (Bifoldable, bifoldMap)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as B
@@ -26,6 +26,7 @@ import Data.ByteString.Short (ShortByteString)
 import Data.ByteString.Short qualified as SBS
 import Data.Char qualified as Char
 import Data.Foldable (foldMap', foldl', foldlM)
+import Data.Foldable qualified as Foldable
 import Data.Functor ((<&>))
 import Data.HashMap.Internal qualified as HashMap.Internal
 import Data.HashMap.Strict (HashMap)
@@ -52,6 +53,8 @@ import Data.Text.Array qualified
 import Data.Text.Encoding qualified as Text.Encoding
 import Data.Text.Internal qualified
 import Data.Tree (Tree)
+import Data.Vector qualified as VB
+import Data.Vector.Mutable qualified as VBM
 import Data.Word (Word16, Word32, Word64, Word8)
 import Data.Word qualified as Word
 import Foreign qualified
@@ -67,7 +70,6 @@ import Serialize.Internal.Put
 import Serialize.Internal.Util
 import System.ByteOrder qualified as ByteOrder
 import System.IO.Unsafe qualified as IO.Unsafe
-import Data.Foldable qualified as Foldable
 
 #include "serialize.h"
 
@@ -178,11 +180,11 @@ instance GSerializeGet G.U1 where
   {-# INLINE gGet #-}
 
 instance GSerializeSize G.V1 where
-  gSize# = \case
+  gSize# = \case {}
   {-# INLINE gSize# #-}
 
 instance GSerializePut G.V1 where
-  gPut = \case
+  gPut = \case {}
   {-# INLINE gPut #-}
 
 instance (GSerializeSize f, GSerializeSize g) => GSerializeSize (f G.:*: g) where
@@ -448,9 +450,20 @@ instance (Hashable a, Serialize a, Serialize b) => Serialize (HashMap a b) where
     size @Int + case (isConstSize @a, isConstSize @b) of
       (STrue, STrue) -> (size @a + size @b) * HashMap.size m
       (_, _) -> HashMap.foldlWithKey' (\s k x -> s + theSize @a k + theSize @b x) 0 m
+
   -- put m = put @Int (HashMap.size m) <> HashMap.foldMapWithKey (\k x -> put k <> put x) m
   put m = putFoldableWith (HashMap.size m) (HashMap.toList m)
   get = foldGet2 HashMap.Internal.unsafeInsert HashMap.empty
+
+instance Serialize a => Serialize (VB.Vector a) where
+  size = sizeFoldable
+  put = putFoldable
+  get = forGetM $ VecOps VBM.new VBM.write VB.unsafeFreeze
+
+instance Serialize a => Serialize (Primitive.Array a) where
+  size = sizeFoldable
+  put = putFoldable
+  get = forGetM $ VecOps (`Primitive.newArray` undefined) Primitive.writeArray Primitive.unsafeFreezeArray
 
 instance Serialize Primitive.ByteArray where
   size bs = size @Int + Primitive.sizeofByteArray bs
@@ -552,6 +565,21 @@ putBifoldable xs = putBifoldableWith (length xs) xs
 putBifoldableWith :: (Serialize a, Serialize b, Bifoldable f) => Int -> f a b -> Put
 putBifoldableWith len xs = putSize len <> bifoldMap put put xs
 {-# INLINE putBifoldableWith #-}
+
+data VecOps :: Type -> Type -> Type -> Type where
+  VecOps ::
+    (Int -> ST s r) ->
+    (r -> Int -> a -> ST s ()) ->
+    (r -> ST s v) ->
+    VecOps s v a
+
+forGetM :: Serialize a => (forall s. VecOps s v a) -> Get v
+forGetM (VecOps new write freeze) = do
+  size <- get @Int
+  v <- unsafeLiftST $ new size
+  Foldable.forM_ [1 .. size] \i -> get >>= unsafeLiftST . write v (i - 1)
+  unsafeLiftST $ freeze v
+{-# INLINE forGetM #-}
 
 foldGet :: (Serialize a) => (a -> b -> b) -> b -> Get b
 foldGet f z = do
