@@ -19,7 +19,7 @@ maintainer:         littlebubu.shu@gmail.com
 -- A copyright notice.
 -- copyright:
 -- category:
-tested-with: GHC == 8.10.7, GHC == 9.0.2, GHC == 9.2.4, GHC == 9.4.2
+tested-with: GHC == 8.8.4, GHC == 8.10.7, GHC == 9.0.2, GHC == 9.2.4, GHC == 9.4.2
 
 common common-options
   default-extensions:
