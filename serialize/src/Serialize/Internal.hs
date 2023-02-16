@@ -404,8 +404,8 @@ instance (Serialize a, Serialize b) => Serialize (Either a b)
 
 instance Serialize a => Serialize [a] where
   size = sizeFoldable
-  put xs = put (length xs) <> foldMap put xs
-  get = reverse <$!> foldGet (:) []
+  put = putFoldable
+  get = Foldable.foldr' (:) [] <$!> get @(Primitive.Array a)
 
 instance {-# OVERLAPPING #-} Serialize String where
   size = size . T.pack
@@ -482,7 +482,7 @@ instance Serialize Text where
       Text.Encoding.decodeUtf8 $! pinnedToByteString i size arr
 
 instance Serialize ShortByteString where
-  size bs = size @Int + (SBS.length bs)
+  size bs = size @Int + SBS.length bs
   {-# INLINE size #-}
 
 #if MIN_VERSION_bytestring(0,11,1)
@@ -494,7 +494,7 @@ instance Serialize ShortByteString where
 #endif
 
 instance Serialize ByteString where
-  size bs = size @Int + (B.length bs)
+  size bs = size @Int + B.length bs
   {-# INLINE size #-}
   put (B.Internal.PS fp off len) =
     putSize len <> unsafeWithSizedPutIO len \marr i ->
