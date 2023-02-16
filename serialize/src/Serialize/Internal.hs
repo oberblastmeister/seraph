@@ -25,7 +25,6 @@ import Data.ByteString.Internal qualified as B.Internal
 import Data.ByteString.Short (ShortByteString)
 import Data.ByteString.Short qualified as SBS
 import Data.Char qualified as Char
-import Data.Foldable (foldMap', foldl', foldlM)
 import Data.Foldable qualified as Foldable
 import Data.Functor ((<&>))
 import Data.HashMap.Internal qualified as HashMap.Internal
@@ -428,7 +427,7 @@ instance Serialize a => Serialize (IntMap a) where
   size xs =
     size @Int + case isConstSize @a of
       STrue -> (size @Int + size @a) * IntMap.size xs
-      SFalse -> getSum $ foldMap' (\x -> Sum (size @Int + size x)) xs
+      SFalse -> getSum $ Foldable.foldMap' (\x -> Sum (size @Int + size x)) xs
   put im = putFoldableWith (IntMap.size im) (IntMap.toList im)
   get = foldGet2 IntMap.insert IntMap.empty
 
@@ -524,7 +523,7 @@ getByteArray = do
 type Foldl s a = forall b. (b -> a -> b) -> b -> s -> b
 
 sizeFoldable :: forall a f. (Serialize a, Foldable f) => f a -> Int
-sizeFoldable = sizeFoldableWith length foldl'
+sizeFoldable = sizeFoldableWith length Foldable.foldl'
 {-# INLINE sizeFoldable #-}
 
 sizeFoldableWith :: forall a s. (Serialize a) => (s -> Int) -> Foldl s a -> s -> Int
@@ -551,7 +550,7 @@ putFoldableWith' len foldM xs =
 {-# INLINE putFoldableWith' #-}
 
 putFoldableWith :: (Serialize a, Foldable f) => Int -> f a -> Put
-putFoldableWith i = putFoldableWith' i foldlM
+putFoldableWith i = putFoldableWith' i Foldable.foldlM
 {-# INLINE putFoldableWith #-}
 
 putFoldable :: (Serialize a, Foldable f) => f a -> Put
@@ -584,13 +583,13 @@ forGetM (VecOps new write freeze) = do
 foldGet :: (Serialize a) => (a -> b -> b) -> b -> Get b
 foldGet f z = do
   size <- getSize
-  foldlM (\xs _ -> do x <- get; pure $! f x xs) z [1 .. size]
+  Foldable.foldlM (\xs _ -> do x <- get; pure $! f x xs) z [1 .. size]
 {-# INLINE foldGet #-}
 
 foldGet2 :: (Serialize a, Serialize b) => (a -> b -> c -> c) -> c -> Get c
 foldGet2 f z = do
   size <- getSize
-  foldlM (\xs _ -> do x <- get; y <- get; pure $! f x y xs) z [1 .. size]
+  Foldable.foldlM (\xs _ -> do x <- get; y <- get; pure $! f x y xs) z [1 .. size]
 {-# INLINE foldGet2 #-}
 
 encodeIO :: Serialize a => a -> IO ByteString
