@@ -28,8 +28,8 @@ import GHC.ForeignPtr (ForeignPtr (..), ForeignPtrContents (PlainPtr))
 import GHC.IO qualified
 import Serialize.Internal.Exts
 import System.IO.Unsafe (unsafeDupablePerformIO)
-import Unsafe.Coerce qualified
 import Data.Coerce
+import GHC.Exts (unsafeCoerce#)
 import GHC.ST qualified
 import Control.Monad.ST (ST)
 import Control.Exception (Exception)
@@ -90,7 +90,7 @@ pinnedToByteString off len bs@(Primitive.ByteArray b#)
   | otherwise = error "ByteArray must be pinned"
   where
     !(Primitive.Ptr addr#) = Primitive.byteArrayContents bs
-    fp = ForeignPtr addr# (PlainPtr (Unsafe.Coerce.unsafeCoerce# b#))
+    fp = ForeignPtr addr# (PlainPtr (unsafeCoerce# b#))
 
 ( #. ) :: Coercible c b => (b -> c) -> (a -> b) -> (a -> c)
 ( #. ) _ = coerce (\x -> x :: b) :: forall a b. Coercible b a => a -> b
