@@ -67,6 +67,7 @@ import Serialize.Internal.Put
 import Serialize.Internal.Util
 import System.ByteOrder qualified as ByteOrder
 import System.IO.Unsafe qualified as IO.Unsafe
+import Data.Foldable qualified as Foldable
 
 #include "serialize.h"
 
@@ -177,11 +178,11 @@ instance GSerializeGet G.U1 where
   {-# INLINE gGet #-}
 
 instance GSerializeSize G.V1 where
-  gSize# = \case {}
+  gSize# = \case
   {-# INLINE gSize# #-}
 
 instance GSerializePut G.V1 where
-  gPut = \case {}
+  gPut = \case
   {-# INLINE gPut #-}
 
 instance (GSerializeSize f, GSerializeSize g) => GSerializeSize (f G.:*: g) where
@@ -341,7 +342,7 @@ instance Serialize (ByteOrder.Fixed ByteOrder.BigEndian Double) where
   {-# INLINE size #-}
   {-# INLINE put #-}
   {-# INLINE get #-}
-  
+
 instance Serialize Char where
   type IsConstSize _ = True
   size = size @Int
@@ -401,7 +402,7 @@ instance (Serialize a, Serialize b) => Serialize (Either a b)
 
 instance Serialize a => Serialize [a] where
   size = sizeFoldable
-  put = putFoldable
+  put xs = put (length xs) <> foldMap put xs
   get = reverse <$!> foldGet (:) []
 
 instance {-# OVERLAPPING #-} Serialize String where
@@ -413,16 +414,12 @@ instance Serialize a => Serialize (NonEmpty a)
 
 instance Serialize a => Serialize (Seq a) where
   size = sizeFoldable
-  put = putFoldable
+  put s = putFoldableWith (Seq.length s) (Foldable.toList s)
   get = foldGet (flip (Seq.|>)) Seq.empty
 
 instance Serialize IntSet where
   size = sizeFoldableWith IntSet.size IntSet.foldl'
-  put is = putFoldableWith (IntSet.size is) foldlM is
-    where
-      foldlM f z0 xs = IntSet.foldr c return xs z0
-        where
-          c x k z = f z x >>= k
+  put is = putFoldableWith (IntSet.size is) (IntSet.toList is)
   get = foldGet IntSet.insert IntSet.empty
 
 instance Serialize a => Serialize (IntMap a) where
@@ -430,9 +427,7 @@ instance Serialize a => Serialize (IntMap a) where
     size @Int + case isConstSize @a of
       STrue -> (size @Int + size @a) * IntMap.size xs
       SFalse -> getSum $ foldMap' (\x -> Sum (size @Int + size x)) xs
-  put im =
-    putSize (IntMap.size im)
-      <> IntMap.foldMapWithKey (\i x -> put i <> put x) im
+  put im = putFoldableWith (IntMap.size im) (IntMap.toList im)
   get = foldGet2 IntMap.insert IntMap.empty
 
 instance (Ord a, Serialize a) => Serialize (Set a) where
@@ -445,7 +440,7 @@ instance (Ord a, Serialize a, Serialize b) => Serialize (Map a b) where
     size @Int + case (isConstSize @a, isConstSize @b) of
       (STrue, STrue) -> (size @a + size @b) * Map.size m
       (_, _) -> Map.foldlWithKey' (\s k x -> s + theSize @a k + theSize @b x) 0 m
-  put m = putSize (Map.size m) <> Map.foldMapWithKey (\k x -> put k <> put x) m
+  put m = putFoldableWith (Map.size m) (Map.toList m)
   get = foldGet2 Map.insert Map.empty
 
 instance (Hashable a, Serialize a, Serialize b) => Serialize (HashMap a b) where
@@ -453,8 +448,9 @@ instance (Hashable a, Serialize a, Serialize b) => Serialize (HashMap a b) where
     size @Int + case (isConstSize @a, isConstSize @b) of
       (STrue, STrue) -> (size @a + size @b) * HashMap.size m
       (_, _) -> HashMap.foldlWithKey' (\s k x -> s + theSize @a k + theSize @b x) 0 m
-  put m = put @Int (HashMap.size m) <> HashMap.foldMapWithKey (\k x -> put k <> put x) m
-  get = foldGet2 HashMap.Internal.insert HashMap.empty
+  -- put m = put @Int (HashMap.size m) <> HashMap.foldMapWithKey (\k x -> put k <> put x) m
+  put m = putFoldableWith (HashMap.size m) (HashMap.toList m)
+  get = foldGet2 HashMap.Internal.unsafeInsert HashMap.empty
 
 instance Serialize Primitive.ByteArray where
   size bs = size @Int + Primitive.sizeofByteArray bs
@@ -475,6 +471,7 @@ instance Serialize Text where
 instance Serialize ShortByteString where
   size bs = size @Int + (SBS.length bs)
   {-# INLINE size #-}
+
 #if MIN_VERSION_bytestring(0,11,1)
   put (SBS.SBS arr#) = put (Primitive.ByteArray arr#)
   get = (\(Primitive.ByteArray arr#) -> SBS.SBS arr#) <$!> get
@@ -495,7 +492,7 @@ instance Serialize ByteString where
     size <- getSize
     unsafeWithSizeGet size \arr i ->
       B.copy $! pinnedToByteString i size arr
-      
+
 putByteArray :: Int -> Int -> Primitive.ByteArray -> Put
 putByteArray off len arr =
   putSize len <> unsafeWithSizedPut len \marr i ->
@@ -534,14 +531,18 @@ getSize = get
 
 type FoldM s a = forall m b. (Monad m) => (b -> a -> m b) -> b -> s -> m b
 
-putFoldableWith :: (Serialize a) => Int -> FoldM s a -> s -> Put
-putFoldableWith len foldM xs =
-  put len <> Put# \marr i -> do
+putFoldableWith' :: (Serialize a) => Int -> FoldM s a -> s -> Put
+putFoldableWith' len foldM xs =
+  put len <> Put# \marr i ->
     foldM (\i x -> runPut# (put x) marr i) i xs
+{-# INLINE putFoldableWith' #-}
+
+putFoldableWith :: (Serialize a, Foldable f) => Int -> f a -> Put
+putFoldableWith i = putFoldableWith' i foldlM
 {-# INLINE putFoldableWith #-}
 
 putFoldable :: (Serialize a, Foldable f) => f a -> Put
-putFoldable = \xs -> putFoldableWith (length xs) foldlM xs
+putFoldable xs = putFoldableWith (length xs) xs
 {-# INLINE putFoldable #-}
 
 putBifoldable :: (Serialize a, Serialize b, Bifoldable f, Foldable (f a)) => f a b -> Put

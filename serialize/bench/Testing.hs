@@ -10,7 +10,6 @@
 module Testing where
 
 import Serialize
-import GHC.Exts (oneShot, inline)
 import Serialize.Internal.Put
 import Prelude hiding (mapM_)
 

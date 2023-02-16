@@ -11,6 +11,9 @@ import Serialize
 import Test.QuickCheck
 import Minecraft
 import Cars
+import Testing
+import Data.Foldable (foldl')
+import Data.HashMap.Strict qualified as HashMap
 
 main :: IO ()
 main = do
@@ -18,7 +21,12 @@ main = do
   let directionTree = ("BinTree Direction", tree)
   players <- sample' $ resize 100 $ arbitrary @[Player]
   cars <- sample' $ resize 500 $ arbitrary @[Car]
-  let tests = benchs ("Cars", cars) ++ benchs ("Players", players) ++ benchs directionTree
+  let hashMap = HashMap.fromList $ (\i -> (i, i)) <$> [1 :: Int .. 300]
+  let tests =
+          benchs ("HashMap", hashMap) ++
+          benchs ("Cars", cars)
+            ++ benchs ("Players", players)
+            ++ benchs directionTree
   defaultMain tests
 
 type C a =
