@@ -475,12 +475,12 @@ instance (Hashable a, Serialize a, Serialize b) => Serialize (HashMap a b) where
 instance Serialize a => Serialize (VB.Vector a) where
   size = sizeFoldable
   put = putFoldable
-  get = forGetM $ VecOps VBM.new VBM.write VB.unsafeFreeze
+  get = getArray $ ArrayOps VBM.new VBM.write VB.unsafeFreeze
 
 instance Serialize a => Serialize (Primitive.Array a) where
   size = sizeFoldable
   put = putFoldable
-  get = forGetM $ VecOps (`Primitive.newArray` undefined) Primitive.writeArray Primitive.unsafeFreezeArray
+  get = getArray $ ArrayOps (`Primitive.newArray` undefined) Primitive.writeArray Primitive.unsafeFreezeArray
 
 instance Serialize Primitive.ByteArray where
   size bs = size @Int + Primitive.sizeofByteArray bs
@@ -583,20 +583,20 @@ putBifoldableWith :: (Serialize a, Serialize b, Bifoldable f) => Int -> f a b ->
 putBifoldableWith len xs = putSize len <> bifoldMap put put xs
 {-# INLINE putBifoldableWith #-}
 
-data VecOps :: Type -> Type -> Type -> Type where
-  VecOps ::
+data ArrayOps :: Type -> Type -> Type -> Type where
+  ArrayOps ::
     (Int -> ST s r) ->
     (r -> Int -> a -> ST s ()) ->
     (r -> ST s v) ->
-    VecOps s v a
+    ArrayOps s v a
 
-forGetM :: Serialize a => (forall s. VecOps s v a) -> Get v
-forGetM (VecOps new write freeze) = do
+getArray :: Serialize a => (forall s. ArrayOps s v a) -> Get v
+getArray (ArrayOps new write freeze) = do
   size <- get @Int
   v <- unsafeLiftST $ new size
   Foldable.forM_ [1 .. size] \i -> get >>= unsafeLiftST . write v (i - 1)
   unsafeLiftST $ freeze v
-{-# INLINE forGetM #-}
+{-# INLINE getArray #-}
 
 foldGet :: (Serialize a) => (a -> b -> b) -> b -> Get b
 foldGet f z = do
