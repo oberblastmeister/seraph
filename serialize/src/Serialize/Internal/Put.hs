@@ -14,6 +14,10 @@ import Serialize.Internal.Util
 
 -- Note: Because everything is unboxed there are a lot more arguments to the function
 -- This makes recursive calls more expensive
+-- | This represents serialization actions.
+-- This is essentally a bytestring builder.
+-- Unlike 'Get', it only implements 'Monoid', but not 'Monad'.
+-- Chain 'Put' actions using '<>' instead of '>>='.
 newtype Put :: Type where
   Put# :: {runPut# :: Primitive.MutableByteArray RealWorld -> Int -> IO Int} -> Put
 

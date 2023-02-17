@@ -11,6 +11,8 @@ import Serialize.Internal.Exts
 import Serialize.Internal.Util
 import qualified Control.Monad.ST.Unsafe as ST.Unsafe
 
+-- | This represents deserialization actions.
+-- Unlike 'Put', this type implements 'Monad'.
 newtype Get :: Type -> Type where
   Get# :: {runGet# :: GE -> Int -> IO (GR a)} -> Get a
 

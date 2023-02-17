@@ -87,6 +87,8 @@ instance KnownBool False where
   boolSing = SFalse
   {-# INLINE boolSing #-}
 
+-- Check is the type has a constant size, returning evidence of the check.
+-- You will need to use TypeApplications for this.
 isConstSize :: forall a. (Serialize a) => SBool (IsConstSize a)
 isConstSize = boolSing @(IsConstSize a)
 {-# INLINE isConstSize #-}
@@ -96,12 +98,32 @@ type family ConstSize b a = r | r -> b where
   ConstSize False a = a -> Int
 
 class KnownBool (IsConstSize a) => Serialize a where
+  -- | Describes whether the type has a constant type.
+  -- This is 'False' by default, but is set to 'True' for primitve types such as 'Int'
   type IsConstSize a :: Bool
   type IsConstSize a = False
 
+  -- | Get the size in bytes. The type of this depends on the 'IsConstSize' type family.
+  -- If 'IsConstSize' is 'True', then this will be of type 'Int'.
+  -- Otherwise, this will be of type @a -> Int@
+  -- 
+  -- If the size is not enough to fit the type,
+  -- an exception will be thrown when serializing.
+  -- An invalid size will __not__ cause undefined behavior
+  -- because serialization will still do bounds checking. However, it
+  -- is considered a programmer error.
   size :: ConstSize (IsConstSize a) a
+
+  -- | Get the size in bytes.
+  -- The type of this value does not depend on the 'IsConstSize' type family.
+  -- Use this if we have a value of a type and we don't want to check if the type has a constant size or not,
+  -- because we already have a value of it.
   theSize :: a -> Int
+  
+  -- | Serialize a value in the 'Put' monoid.
   put :: a -> Put
+  
+  -- | Deserialize a value in the 'Get' monad.
   get :: Get a
 
   default size :: (Generic a, GSerializeSize (G.Rep a), IsConstSize a ~ False) => ConstSize (IsConstSize a) a
@@ -592,6 +614,9 @@ foldGet2 f z = do
   Foldable.foldlM (\xs _ -> do x <- get; y <- get; pure $! f x y xs) z [1 .. size]
 {-# INLINE foldGet2 #-}
 
+-- | Same as 'encode' but inside the 'IO' monad.
+-- This is useful to throw exceptions on evaluation of the 'IO' action instead of evaluation of the inner value.
+-- See 'evaluate' for more info.
 encodeIO :: Serialize a => a -> IO ByteString
 encodeIO x = do
   marr <- Primitive.newPinnedByteArray sz
@@ -600,9 +625,13 @@ encodeIO x = do
   where
     sz = theSize x
 
+-- | Encode a value into a 'ByteString'.
 encode :: Serialize a => a -> ByteString
 encode = IO.Unsafe.unsafeDupablePerformIO . encodeIO
 
+-- | Same as 'decode'' but in the 'IO' monad.
+-- This is useful to throw exceptions on evaluation of the 'IO' action instead of evaluation of the inner value.
+-- See 'evaluate' for more info.
 decodeIO :: Serialize a => ByteString -> IO a
 decodeIO bs = do
   GR _ x <- runGet# get (GE arr l) i
@@ -610,9 +639,12 @@ decodeIO bs = do
   where
     !(arr, i, l) = unpackByteString# bs
 
+-- | Decode a value from a 'ByteString'.
+-- If the 'ByteString' is invalid, this will return 'Left' with some 'GetException'.
 decode :: Serialize a => ByteString -> Either GetException a
 decode = IO.Unsafe.unsafeDupablePerformIO . Exception.try . decodeIO
 
+-- | Same as 'decode', but will throw an exception if the 'Either' is 'Left'
 decode' :: Serialize a => ByteString -> a
 decode' bs = case decode bs of
   Left e -> Exception.throw e
