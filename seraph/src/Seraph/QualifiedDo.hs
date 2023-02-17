@@ -1,6 +1,6 @@
-module Serialize.QualifiedDo ((>>)) where
+module Seraph.QualifiedDo ((>>)) where
 
-import Serialize.Internal.Put (Put)
+import Seraph.Internal.Put (Put)
 import Prelude hiding ((>>))
 
 (>>) :: Put -> Put -> Put

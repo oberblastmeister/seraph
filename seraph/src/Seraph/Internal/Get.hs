@@ -1,4 +1,4 @@
-module Serialize.Internal.Get where
+module Seraph.Internal.Get where
 
 import Control.Exception (Exception)
 import Control.Exception qualified as Exception
@@ -7,8 +7,8 @@ import Data.Primitive
 import Data.Primitive qualified as Primitive
 import Data.Primitive.ByteArray.Unaligned (PrimUnaligned (..))
 import Data.Primitive.ByteArray.Unaligned qualified as Unaligned
-import Serialize.Internal.Exts
-import Serialize.Internal.Util
+import Seraph.Internal.Exts
+import Seraph.Internal.Util
 import qualified Control.Monad.ST.Unsafe as ST.Unsafe
 
 -- | This represents deserialization actions.

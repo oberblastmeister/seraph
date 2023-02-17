@@ -1,5 +1,5 @@
 cabal-version:      3.6
-name:               serialize-th
+name:               seraph-bench
 version:            0.1.0.0
 
 -- A short (one-line) description of the package.
@@ -75,14 +75,14 @@ common common-options
     -Widentities
   build-depends:
     base >= 4.12 && <5,
-    serialize,
-    template-haskell,
-
-library
-  import: common-options
-  hs-source-dirs: src
-  exposed-modules:
-    Serialize.TH
+    seraph,
+    seraph-th,
+    gauge,
+    bytestring,
+    text,
+    containers,
+    unordered-containers,
+    vector,
 
 common rtsopts
   ghc-options:
@@ -90,16 +90,9 @@ common rtsopts
     -rtsopts
     -with-rtsopts=-N
   
-test-suite serialize-th-test
+executable seraph-bench
   import: common-options, rtsopts
-  type: exitcode-stdio-1.0
-  hs-source-dirs: test
-  main-is: Spec.hs
-  other-modules:
-  build-depends:
-    serialize-th,
-    hspec ^>= 2.9.4,
-    QuickCheck ^>= 2.14.2,
-    quickcheck-instances ^>= 0.3.27,
-  build-tool-depends:
-    hspec-discover:hspec-discover,
+  main-is: Main.hs
+  -- Modules included in this executable, other than Main.
+  -- other-modules:
+  hs-source-dirs: src

@@ -1,6 +1,6 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 
-module Serialize.Internal.Util
+module Seraph.Internal.Util
   ( sizeOf##,
     unI#,
     unW#,
@@ -26,7 +26,7 @@ import Data.Primitive qualified as Primitive
 import Foreign qualified
 import GHC.ForeignPtr (ForeignPtr (..), ForeignPtrContents (PlainPtr))
 import GHC.IO qualified
-import Serialize.Internal.Exts
+import Seraph.Internal.Exts
 import System.IO.Unsafe (unsafeDupablePerformIO)
 import Data.Coerce
 import GHC.Exts (unsafeCoerce#)

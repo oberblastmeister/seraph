@@ -1,4 +1,4 @@
-module Serialize
+module Seraph
   ( Serialize (..),
     Get,
     Put,
@@ -10,6 +10,6 @@ module Serialize
   )
 where
 
-import Serialize.Internal
-import Serialize.Internal.Get
-import Serialize.Internal.Put
+import Seraph.Internal
+import Seraph.Internal.Get
+import Seraph.Internal.Put

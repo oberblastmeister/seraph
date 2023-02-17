@@ -12,7 +12,7 @@ import Data.Store qualified as S
 import Data.Typeable (Typeable)
 import Flat qualified as F
 import GHC.Generics (Generic)
-import Serialize
+import Seraph
 import Test.QuickCheck
 
 data BinTree a
@@ -49,14 +49,14 @@ instance Serialize Direction
 storeSize :: S.Size (BinTree Direction)
 storeSize = S.size
 
-serializeSize :: BinTree Direction -> Int
-serializeSize = size
+seraphSize :: BinTree Direction -> Int
+seraphSize = size
 
-serializeEncode :: BinTree Direction -> Put
-serializeEncode = put
+seraphEncode :: BinTree Direction -> Put
+seraphEncode = put
 
-serializeDecode :: Get (BinTree Direction)
-serializeDecode = get
+seraphDecode :: Get (BinTree Direction)
+seraphDecode = get
 
 storeDecode :: S.Peek (BinTree Direction)
 storeDecode = S.peek

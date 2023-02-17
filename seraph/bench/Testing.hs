@@ -3,15 +3,15 @@
 -dsuppress-module-prefixes
 -dsuppress-coercions
 -dsuppress-idinfo
--dverbose-core2core
 #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
 
 module Testing where
 
-import Serialize
-import Serialize.Internal.Put
+import Seraph
+import Seraph.Internal.Put
 import Prelude hiding (mapM_)
+import qualified Data.Primitive as Primitive
 
 
 weird :: forall a. Serialize a => [Int] -> Get a
@@ -102,3 +102,12 @@ f3 = foldMap c1
 
 f4 :: forall a. C2 a => [a] -> M2 ()
 f4 = mapM_ c2
+
+serializeArray :: Serialize a => Primitive.Array a -> Put
+serializeArray = put
+
+deserializeArray :: Serialize a => Get (Primitive.Array a)
+deserializeArray = get
+
+serializeArrayInt ::  Primitive.Array Int -> Put
+serializeArrayInt = put

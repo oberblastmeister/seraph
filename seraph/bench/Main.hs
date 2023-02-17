@@ -11,7 +11,7 @@ import Data.HashMap.Strict qualified as HashMap
 import Data.Store qualified as S
 import Flat qualified as F
 import Minecraft
-import Serialize
+import Seraph
 import Test.QuickCheck
 import Testing
 
@@ -22,13 +22,13 @@ main = do
   players <- sample' $ resize 100 $ arbitrary @[Player]
   cars <- sample' $ resize 500 $ arbitrary @[Car]
   let hashMap = HashMap.fromList $ (\i -> (i, i)) <$> [1 :: Int .. 300]
-  let mag = (10 ^) <$> [2 :: Int .. 5]
+  let mag = (10 ^) <$> [2 :: Int .. 4]
   let tests =
-        concatMap (\m -> benchs ("List " ++ show m, replicate m (0 :: Int))) mag
-          ++ benchs ("HashMap", hashMap)
-          ++ benchs ("Cars", cars)
+        benchs ("Cars", cars)
           ++ benchs ("Players", players)
           ++ benchs directionTree
+          ++ concatMap (\m -> benchs ("List " ++ show m, replicate m (0 :: Int))) mag
+          ++ benchs ("HashMap", hashMap)
   defaultMain tests
 
 type C a =
@@ -57,7 +57,7 @@ benchs (name, obj) =
 
 pkgs :: (C a) => [(String, a -> ByteString, ByteString -> a)]
 pkgs =
-  [ ("serialize", encode, decode'),
+  [ ("seraph", encode, decode'),
     ("store", S.encode, fromRight' . S.decode),
     ("flat", F.flat, fromRight' . F.unflat)
   ]

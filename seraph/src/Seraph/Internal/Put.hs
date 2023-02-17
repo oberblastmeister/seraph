@@ -1,4 +1,4 @@
-module Serialize.Internal.Put where
+module Seraph.Internal.Put where
 
 import Control.Exception (Exception)
 import Control.Exception qualified as Exception
@@ -9,8 +9,8 @@ import Data.Primitive (Prim)
 import Data.Primitive qualified as Primitive
 import Data.Primitive.ByteArray.Unaligned (PrimUnaligned (..))
 import Data.Primitive.ByteArray.Unaligned qualified as Unaligned
-import Serialize.Internal.Exts
-import Serialize.Internal.Util
+import Seraph.Internal.Exts
+import Seraph.Internal.Util
 
 -- Note: Because everything is unboxed there are a lot more arguments to the function
 -- This makes recursive calls more expensive

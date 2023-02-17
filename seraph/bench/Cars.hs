@@ -11,7 +11,7 @@ import GHC.Generics (Generic)
 import Generic.Random
 import Test.QuickCheck
 import Control.DeepSeq
-import Serialize
+import Seraph
 import qualified Data.Store as S
 import qualified Flat as F
 import Test.QuickCheck.Instances ()
@@ -45,11 +45,11 @@ data Car = Car
   deriving (Show, Eq, Generic, NFData, Serialize, S.Store, F.Flat)
   deriving Arbitrary via GenericArbitrarySingle Car
 
-serializeEncode :: Car -> Put
-serializeEncode = put
+seraphEncode :: Car -> Put
+seraphEncode = put
 
-serializeDecode :: Get Car
-serializeDecode = get
+seraphDecode :: Get Car
+seraphDecode = get
 
 storeDecode :: S.Peek Car
 storeDecode = S.peek

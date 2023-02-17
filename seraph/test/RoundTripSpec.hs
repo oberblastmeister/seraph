@@ -21,7 +21,7 @@ import Data.Text (Text)
 import Data.Tree (Tree)
 import Data.Vector qualified as VB
 import Data.Word (Word8)
-import Serialize
+import Seraph
 import Test.Hspec
 import Test.Hspec.QuickCheck
 import Test.QuickCheck

@@ -12,7 +12,7 @@ import Data.Store qualified as S
 import Data.Text (Text)
 import Data.Typeable (Typeable)
 import GHC.Generics (Generic)
-import Serialize
+import Seraph
 
 data BinOp
   = Add
@@ -58,20 +58,20 @@ instance S.Store UnaryOp
 
 instance S.Store Lit
 
-serializeEncode :: Expr -> Put
-serializeEncode = put
+seraphEncode :: Expr -> Put
+seraphEncode = put
 
 storeEncode :: Expr -> S.Poke ()
 storeEncode = S.poke
 
-serializeDecode :: Get Expr
-serializeDecode = get
+seraphDecode :: Get Expr
+seraphDecode = get
 
 storeDecode :: S.Peek Expr
 storeDecode = S.peek
 
-serializeSize :: Expr -> Int
-serializeSize = size
+seraphSize :: Expr -> Int
+seraphSize = size
 
 storeSize :: S.Size Expr
 storeSize = S.size

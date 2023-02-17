@@ -1,7 +1,7 @@
 packages:
-    serialize/
-    serialize-th/
-    serialize-bench/
+    seraph/
+    seraph-th/
+    seraph-bench/
 
 tests: True
 benchmarks: True

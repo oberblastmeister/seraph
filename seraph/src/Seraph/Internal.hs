@@ -3,16 +3,12 @@
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-{-# OPTIONS_GHC -ddump-simpl
--ddump-to-file
--dsuppress-module-prefixes
--dsuppress-coercions #-}
 
 {-# HLINT ignore "Redundant bracket" #-}
 {-# HLINT ignore "Use if" #-}
 {-# HLINT ignore "Redundant lambda" #-}
 
-module Serialize.Internal where
+module Seraph.Internal where
 
 import Control.Exception qualified as Exception
 import Control.Monad ((<$!>))
@@ -63,14 +59,14 @@ import GHC.Generics qualified as G
 import GHC.IO (IO (..))
 import GHC.TypeLits (KnownNat, Nat, type (+), type (<=?))
 import GHC.TypeLits qualified as TypeLits
-import Serialize.Internal.Exts
-import Serialize.Internal.Get
-import Serialize.Internal.Put
-import Serialize.Internal.Util
+import Seraph.Internal.Exts
+import Seraph.Internal.Get
+import Seraph.Internal.Put
+import Seraph.Internal.Util
 import System.ByteOrder qualified as ByteOrder
 import System.IO.Unsafe qualified as IO.Unsafe
 
-#include "serialize.h"
+#include "seraph.h"
 
 data SBool :: Bool -> Type where
   STrue :: SBool True

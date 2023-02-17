@@ -1,13 +1,8 @@
-cabal-version:      3.6
-name:               serialize-bench
-version:            0.1.0.0
-
--- A short (one-line) description of the package.
--- synopsis:
-
--- A longer description of the package.
--- description:
-
+cabal-version: 3.6
+name: seraph
+version: 0.1.0.0
+synopsis: Fast serialization
+description: A fast and light serialization library
 -- A URL where users can report bugs.
 -- bug-reports:
 
@@ -46,7 +41,7 @@ common common-options
     DeriveGeneric,
     DeriveDataTypeable,
     DeriveLift,
-    DeriveTraversable ,
+    DeriveTraversable,
     GeneralizedNewtypeDeriving,
     GADTs,
     PolyKinds,
@@ -60,12 +55,16 @@ common common-options
     TypeOperators,
     BlockArguments,
     ImportQualifiedPost,
+    MagicHash,
+    UnboxedTuples,
+    UnboxedSums,
   ghc-options:
     -Wall
     -Wredundant-constraints
     -Wno-name-shadowing
     -- until OverloadedRecordUpdate stabilizes
     -Wno-ambiguous-fields
+    -Wno-unticked-promoted-constructors
     -Wno-partial-type-signatures
     -Werror=incomplete-patterns
     -Werror=incomplete-uni-patterns
@@ -75,14 +74,34 @@ common common-options
     -Widentities
   build-depends:
     base >= 4.12 && <5,
-    serialize,
-    serialize-th,
-    gauge,
     bytestring,
-    text,
+    text >= 2.0,
     containers,
     unordered-containers,
+    hashable,
     vector,
+    primitive,
+    primitive-unaligned,
+    byte-order,
+
+library
+  import: common-options
+  hs-source-dirs: src
+  exposed-modules:
+    Seraph
+      Seraph.QualifiedDo
+      Seraph.Internal
+        Seraph.Internal.Get
+        Seraph.Internal.Put
+        Seraph.Internal.Util
+        Seraph.Internal.Exts
+  include-dirs:
+    include
+  ghc-options: -O2
+  -- need to add this so it appears in cabal sdist
+  -- makes haskell-ci work
+  install-includes:
+    seraph.h
 
 common rtsopts
   ghc-options:
@@ -90,9 +109,41 @@ common rtsopts
     -rtsopts
     -with-rtsopts=-N
   
-executable serialize-bench
+test-suite seraph-test
   import: common-options, rtsopts
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: Spec.hs
+  other-modules:
+    RoundTripSpec
+  build-depends:
+    seraph,
+    hspec ^>= 2.9.4,
+    QuickCheck ^>= 2.14.2,
+    quickcheck-instances ^>= 0.3.27,
+  build-tool-depends:
+    hspec-discover:hspec-discover,
+  if impl(ghc >= 9.2.2)
+    ghc-options: -fcheck-prim-bounds
+
+benchmark bench
+  import: common-options, rtsopts
+  type: exitcode-stdio-1.0
+  hs-source-dirs: bench
   main-is: Main.hs
-  -- Modules included in this executable, other than Main.
-  -- other-modules:
-  hs-source-dirs: src
+  other-modules:
+    BinTree
+    Expr
+    Minecraft
+    Cars
+    Testing
+  ghc-options: -O2
+  build-depends:
+    QuickCheck,
+    quickcheck-instances,
+    generic-random,
+    deepseq,
+    criterion,
+    flat,
+    seraph,
+    store,

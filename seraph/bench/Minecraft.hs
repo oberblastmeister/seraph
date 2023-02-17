@@ -16,7 +16,7 @@ import Data.Word
 import Flat qualified as F
 import GHC.Generics (Generic)
 import Generic.Random (GenericArbitrarySingle (..), GenericArbitraryU(..))
-import Serialize
+import Seraph
 import Test.QuickCheck (Arbitrary)
 import Test.QuickCheck.Instances ()
 import Data.ByteString (ByteString)
@@ -120,14 +120,14 @@ data Player
   deriving (Show, Eq, Generic, NFData, Serialize, S.Store, F.Flat)
   deriving (Arbitrary) via GenericArbitrarySingle Player
 
-serializeEncode :: Player -> ByteString
-serializeEncode = encode
+seraphEncode :: Player -> ByteString
+seraphEncode = encode
 
 storeEncode :: Player -> ByteString
 storeEncode = S.encode
 
-serializeDecode :: ByteString -> Player
-serializeDecode = decode'
+seraphDecode :: ByteString -> Player
+seraphDecode = decode'
 
 storeDecode :: ByteString -> Player
 storeDecode = fromRight' . S.decode
