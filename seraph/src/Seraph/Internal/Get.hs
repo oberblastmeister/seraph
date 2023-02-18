@@ -7,9 +7,9 @@ import Data.Primitive
 import Data.Primitive qualified as Primitive
 import Data.Primitive.ByteArray.Unaligned (PrimUnaligned (..))
 import Data.Primitive.ByteArray.Unaligned qualified as Unaligned
-import Seraph.Internal.Exts
 import Seraph.Internal.Util
 import qualified Control.Monad.ST.Unsafe as ST.Unsafe
+import Data.Kind (Type)
 
 -- | This represents deserialization actions.
 -- Unlike 'Put', this type implements 'Monad'.

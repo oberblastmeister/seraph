@@ -1,18 +1,12 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 
 module Seraph.Internal.Util
-  ( sizeOf##,
-    unI#,
-    unW#,
-    (<!$!>),
-    unpackByteString#,
+  (
+    unpackByteString,
     pinnedToByteString,
-    runIO#,
-    S#,
     sizeOf',
     ( .# ),
     ( #. ),
-    runST#,
     Impossible(..),
     impossible,
   )
@@ -26,7 +20,6 @@ import Data.Primitive qualified as Primitive
 import Foreign qualified
 import GHC.ForeignPtr (ForeignPtr (..), ForeignPtrContents (PlainPtr))
 import GHC.IO qualified
-import Seraph.Internal.Exts
 import System.IO.Unsafe (unsafeDupablePerformIO)
 import Data.Coerce
 import GHC.Exts (unsafeCoerce#)
@@ -35,40 +28,12 @@ import Control.Monad.ST (ST)
 import Control.Exception (Exception)
 import qualified Control.Exception as Exception
 
-type S# = State# RealWorld
-
 sizeOf' :: forall a. Prim a => Int
 sizeOf' = Primitive.sizeOf (undefined :: a)
 {-# INLINE sizeOf' #-}
 
-sizeOf## :: forall a. Prim a => Int#
-sizeOf## = Primitive.sizeOf# (undefined :: a)
-{-# INLINE sizeOf## #-}
-
-unI# :: Int -> Int#
-unI# (I# i#) = i#
-{-# INLINE unI# #-}
-
-unW# :: Word -> Word#
-unW# (W# w#) = w#
-{-# INLINE unW# #-}
-
-runIO# :: IO a -> State# RealWorld -> (# State# RealWorld, a #)
-runIO# = coerce
-{-# INLINE runIO# #-}
-
-runST# :: ST s a -> State# s -> (# State# s, a #)
-runST# = coerce
-{-# INLINE runST# #-}
-
-(<!$!>) :: Monad m => (a -> b) -> m a -> m b
-f <!$!> m = do
-  !x <- m
-  pure $! f x
-{-# INLINE (<!$!>) #-}
-
-unpackByteString# :: ByteString -> ( Primitive.ByteArray, Int, Int )
-unpackByteString# bs@(B.Internal.PS (ForeignPtr (Primitive.Ptr -> p) fpc) o l) =
+unpackByteString :: ByteString -> (Primitive.ByteArray, Int, Int)
+unpackByteString bs@(B.Internal.PS (ForeignPtr (Primitive.Ptr -> p) fpc) o l) =
  unsafeDupablePerformIO $ case fpc of
   PlainPtr (Primitive.MutableByteArray -> marr) -> do
     let base = Primitive.mutableByteArrayContents marr

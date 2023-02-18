@@ -94,7 +94,6 @@ library
         Seraph.Internal.Get
         Seraph.Internal.Put
         Seraph.Internal.Util
-        Seraph.Internal.Exts
   include-dirs:
     include
   ghc-options: -O2

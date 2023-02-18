@@ -59,12 +59,14 @@ import GHC.Generics qualified as G
 import GHC.IO (IO (..))
 import GHC.TypeLits (KnownNat, Nat, type (+), type (<=?))
 import GHC.TypeLits qualified as TypeLits
-import Seraph.Internal.Exts
 import Seraph.Internal.Get
 import Seraph.Internal.Put
 import Seraph.Internal.Util
 import System.ByteOrder qualified as ByteOrder
 import System.IO.Unsafe qualified as IO.Unsafe
+import Data.Kind (Type, Constraint)
+import GHC.Exts (Proxy#, proxy#)
+import Data.Coerce (coerce)
 
 #include "seraph.h"
 
@@ -633,7 +635,7 @@ decodeIO bs = do
   GR _ x <- runGet# get (GE arr l) i
   pure x
   where
-    !(arr, i, l) = unpackByteString# bs
+    !(arr, i, l) = unpackByteString bs
 
 -- | Decode a value from a 'ByteString'.
 -- If the 'ByteString' is invalid, this will return 'Left' with some 'GetException'.

@@ -9,8 +9,9 @@ import Data.Primitive (Prim)
 import Data.Primitive qualified as Primitive
 import Data.Primitive.ByteArray.Unaligned (PrimUnaligned (..))
 import Data.Primitive.ByteArray.Unaligned qualified as Unaligned
-import Seraph.Internal.Exts
 import Seraph.Internal.Util
+import Data.Kind (Type)
+import GHC.Exts (RealWorld)
 
 -- Note: Because everything is unboxed there are a lot more arguments to the function
 -- This makes recursive calls more expensive

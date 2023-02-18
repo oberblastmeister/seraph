@@ -6,14 +6,12 @@ import Cars
 import Control.DeepSeq
 import Criterion.Main
 import Data.ByteString (ByteString)
-import Data.Foldable (foldl')
 import Data.HashMap.Strict qualified as HashMap
 import Data.Store qualified as S
 import Flat qualified as F
 import Minecraft
 import Seraph
 import Test.QuickCheck
-import Testing
 
 main :: IO ()
 main = do
