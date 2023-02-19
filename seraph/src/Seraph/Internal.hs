@@ -71,6 +71,7 @@ import System.ByteOrder qualified as ByteOrder
 import System.IO.Unsafe qualified as IO.Unsafe
 import Unsafe.Coerce qualified
 
+-- | The default endianness that the library uses. This is usually little endian.
 type DefaultEndian = ByteOrder.LittleEndian
 
 #include "seraph.h"
@@ -101,7 +102,7 @@ type family ConstSize b a = r | r -> b where
   ConstSize False a = a -> Int
 
 class KnownBool (IsConstSize a) => Serialize a where
-  -- | Describes whether the type has a constant type.
+  -- | Describes whether the type has a constant size.
   -- This is 'False' by default, but is set to 'True' for primitve types such as 'Int'
   type IsConstSize a :: Bool
 
