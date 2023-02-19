@@ -20,7 +20,9 @@ import Data.Set (Set)
 import Data.Text (Text)
 import Data.Tree (Tree)
 import Data.Vector qualified as VB
-import Data.Word (Word8)
+import Data.Vector.Generic qualified as GVector
+import Data.Vector.Primitive qualified as VP
+import Data.Word (Word64, Word8)
 import Seraph
 import Test.Hspec
 import Test.Hspec.QuickCheck
@@ -74,3 +76,13 @@ spec :: Spec
 spec = do
   for_ props $ prop ""
   for_ $(allProperties) $ uncurry prop
+
+instance (Primitive.Prim a, Arbitrary a) => Arbitrary (VP.Vector a) where
+  arbitrary = arbitraryVector
+  shrink = shrinkVector
+
+arbitraryVector :: (GVector.Vector v a, Arbitrary a) => Gen (v a)
+arbitraryVector = GVector.fromList `fmap` arbitrary
+
+shrinkVector :: (GVector.Vector v a, Arbitrary a) => v a -> [v a]
+shrinkVector = fmap GVector.fromList . shrink . GVector.toList

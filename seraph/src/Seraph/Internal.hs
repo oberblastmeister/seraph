@@ -21,6 +21,7 @@ import Data.ByteString.Internal qualified as B.Internal
 import Data.ByteString.Short (ShortByteString)
 import Data.ByteString.Short qualified as SBS
 import Data.Char qualified as Char
+import Data.Coerce (coerce)
 import Data.Foldable qualified as Foldable
 import Data.Functor ((<&>))
 import Data.HashMap.Internal qualified as HashMap.Internal
@@ -32,6 +33,7 @@ import Data.IntMap (IntMap)
 import Data.IntMap qualified as IntMap
 import Data.IntSet (IntSet)
 import Data.IntSet qualified as IntSet
+import Data.Kind (Constraint, Type)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -50,9 +52,12 @@ import Data.Text.Internal qualified
 import Data.Tree (Tree)
 import Data.Vector qualified as VB
 import Data.Vector.Mutable qualified as VBM
+import Data.Vector.Primitive qualified as VP
+import Data.Vector.Primitive.Mutable qualified as VPM
 import Data.Word (Word16, Word32, Word64, Word8)
 import Data.Word qualified as Word
 import Foreign qualified
+import GHC.Exts (Proxy#, proxy#)
 import GHC.Float qualified
 import GHC.Generics (Generic)
 import GHC.Generics qualified as G
@@ -64,9 +69,9 @@ import Seraph.Internal.Put
 import Seraph.Internal.Util
 import System.ByteOrder qualified as ByteOrder
 import System.IO.Unsafe qualified as IO.Unsafe
-import Data.Kind (Type, Constraint)
-import GHC.Exts (Proxy#, proxy#)
-import Data.Coerce (coerce)
+import Unsafe.Coerce qualified
+
+type DefaultEndian = ByteOrder.LittleEndian
 
 #include "seraph.h"
 
@@ -99,12 +104,13 @@ class KnownBool (IsConstSize a) => Serialize a where
   -- | Describes whether the type has a constant type.
   -- This is 'False' by default, but is set to 'True' for primitve types such as 'Int'
   type IsConstSize a :: Bool
+
   type IsConstSize a = False
 
   -- | Get the size in bytes. The type of this depends on the 'IsConstSize' type family.
   -- If 'IsConstSize' is 'True', then this will be of type 'Int'.
   -- Otherwise, this will be of type @a -> Int@
-  -- 
+  --
   -- If the size is not enough to fit the type,
   -- an exception will be thrown when serializing.
   -- An invalid size will __not__ cause undefined behavior
@@ -117,10 +123,10 @@ class KnownBool (IsConstSize a) => Serialize a where
   -- Use this if we have a value of a type and we don't want to check if the type has a constant size or not,
   -- because we already have a value of it.
   theSize :: a -> Int
-  
+
   -- | Serialize a value in the 'Put' monoid.
   put :: a -> Put
-  
+
   -- | Deserialize a value in the 'Get' monad.
   get :: Get a
 
@@ -377,16 +383,16 @@ deriveSerializePrim (Word8)
 deriveSerializePrim (Word16)
 deriveSerializePrim (Word32)
 deriveSerializePrim (Word64)
-deriveSerializePrimLE (Word)
+deriveSerializePrimDefault (Word)
 
 deriveSerializePrim (Int8)
 deriveSerializePrim (Int16)
 deriveSerializePrim (Int32)
 deriveSerializePrim (Int64)
-deriveSerializePrimLE (Int)
+deriveSerializePrimDefault (Int)
 
-deriveSerializePrimLE (Float)
-deriveSerializePrimLE (Double)
+deriveSerializePrimDefault (Float)
+deriveSerializePrimDefault (Double)
 
 -- deriveSerializeNewtype (Dual)
 -- deriveSerializeNewtype (Sum)

@@ -50,6 +50,7 @@ common common-options
     TypeFamilies,
     TypeFamilyDependencies,
     FunctionalDependencies,
+    QuantifiedConstraints,
     StandaloneKindSignatures,
     ExistentialQuantification,
     TypeOperators,

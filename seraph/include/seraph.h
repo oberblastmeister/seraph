@@ -20,11 +20,11 @@ instance Serialize (ty) where { \
     {-# INLINE get #-}; \
 }
 
-#define deriveSerializePrimLE(ty) \
-deriveSerializePrimWith(ty, coerce (put @(ByteOrder.Fixed ByteOrder.LittleEndian ty)), coerce (get @(ByteOrder.Fixed ByteOrder.LittleEndian ty)))
+#define deriveSerializePrimDefault(ty) \
+deriveSerializePrimWith(ty, coerce (put @(ByteOrder.Fixed DefaultEndian ty)), coerce (get @(ByteOrder.Fixed DefaultEndian ty)))
 
 #define deriveSerializePrim(ty) \
-deriveSerializePrimLE(ty); \
+deriveSerializePrimDefault(ty); \
 deriveSerializeFixed(ty)
 
 #define deriveSerializeNewtype(ty) \
