@@ -72,7 +72,11 @@ import System.IO.Unsafe qualified as IO.Unsafe
 import Unsafe.Coerce qualified
 
 -- | The default endianness that the library uses. This is usually little endian.
+#ifdef BIG_ENDIAN
+type DefaultEndian = ByteOrder.BigEndian
+#else
 type DefaultEndian = ByteOrder.LittleEndian
+#endif
 
 #include "seraph.h"
 
@@ -324,7 +328,7 @@ instance Serialize (ByteOrder.Fixed ByteOrder.LittleEndian Float) where
   size = sizeOf' @Word32
   put = case ByteOrder.targetByteOrder of
     ByteOrder.LittleEndian -> putPrim .# ByteOrder.getFixed
-    ByteOrder.BigEndian -> put . GHC.Float.castFloatToWord32 .# ByteOrder.getFixed
+    ByteOrder.BigEndian -> put . Word.byteSwap32 . GHC.Float.castFloatToWord32 .# ByteOrder.getFixed
   get = case ByteOrder.targetByteOrder of
     ByteOrder.LittleEndian -> coerce @(Get Float) @(Get (ByteOrder.Fixed ByteOrder.LittleEndian Float)) getPrim
     ByteOrder.BigEndian -> (ByteOrder.Fixed #. GHC.Float.castWord32ToFloat . Word.byteSwap32) <$!> get
@@ -337,7 +341,7 @@ instance Serialize (ByteOrder.Fixed ByteOrder.BigEndian Float) where
   size = sizeOf' @Word32
   put = case ByteOrder.targetByteOrder of
     ByteOrder.BigEndian -> putPrim .# ByteOrder.getFixed
-    ByteOrder.LittleEndian -> put . GHC.Float.castFloatToWord32 .# ByteOrder.getFixed
+    ByteOrder.LittleEndian -> put . Word.byteSwap32 . GHC.Float.castFloatToWord32 .# ByteOrder.getFixed
   get = case ByteOrder.targetByteOrder of
     ByteOrder.BigEndian -> coerce @(Get Float) @(Get (ByteOrder.Fixed ByteOrder.BigEndian Float)) getPrim
     ByteOrder.LittleEndian -> (ByteOrder.Fixed #. GHC.Float.castWord32ToFloat . Word.byteSwap32) <$!> get
@@ -350,7 +354,7 @@ instance Serialize (ByteOrder.Fixed ByteOrder.LittleEndian Double) where
   size = sizeOf' @Word64
   put = case ByteOrder.targetByteOrder of
     ByteOrder.LittleEndian -> putPrim .# ByteOrder.getFixed
-    ByteOrder.BigEndian -> put . GHC.Float.castDoubleToWord64 .# ByteOrder.getFixed
+    ByteOrder.BigEndian -> put . Word.byteSwap64 . GHC.Float.castDoubleToWord64 .# ByteOrder.getFixed
   get = case ByteOrder.targetByteOrder of
     ByteOrder.LittleEndian -> coerce @(Get Double) @(Get (ByteOrder.Fixed ByteOrder.LittleEndian Double)) getPrim
     ByteOrder.BigEndian -> (ByteOrder.Fixed #. GHC.Float.castWord64ToDouble . Word.byteSwap64) <$!> get
@@ -363,7 +367,7 @@ instance Serialize (ByteOrder.Fixed ByteOrder.BigEndian Double) where
   size = sizeOf' @Word64
   put = case ByteOrder.targetByteOrder of
     ByteOrder.BigEndian -> putPrim .# ByteOrder.getFixed
-    ByteOrder.LittleEndian -> put . GHC.Float.castDoubleToWord64 .# ByteOrder.getFixed
+    ByteOrder.LittleEndian -> put . Word.byteSwap64 . GHC.Float.castDoubleToWord64 .# ByteOrder.getFixed
   get = case ByteOrder.targetByteOrder of
     ByteOrder.BigEndian -> coerce @(Get Double) @(Get (ByteOrder.Fixed ByteOrder.BigEndian Double)) getPrim
     ByteOrder.LittleEndian -> (ByteOrder.Fixed #. GHC.Float.castWord64ToDouble . Word.byteSwap64) <$!> get

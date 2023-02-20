@@ -16,6 +16,10 @@ maintainer:         littlebubu.shu@gmail.com
 -- category:
 tested-with: GHC == 8.10.7, GHC == 9.0.2, GHC == 9.2.4, GHC == 9.4.2
 
+flag big-endian
+  manual: True
+  default: False
+
 common common-options
   default-extensions:
     FlexibleInstances,
@@ -73,6 +77,8 @@ common common-options
     -Werror=incomplete-record-updates
     -Wcpp-undef
     -Widentities
+  if flag(big-endian)
+    cpp-options: -DBIG_ENDIAN
   build-depends:
     base >= 4.12 && <5,
     bytestring,
