@@ -1,20 +1,31 @@
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+
+{-# HLINT ignore "Avoid lambda" #-}
 module Seraph.Internal.Get where
 
 import Control.Exception (Exception)
 import Control.Exception qualified as Exception
 import Control.Monad.ST (ST)
+import Control.Monad.ST.Unsafe qualified as ST.Unsafe
+import Data.Kind (Type)
 import Data.Primitive
 import Data.Primitive qualified as Primitive
 import Data.Primitive.ByteArray.Unaligned (PrimUnaligned (..))
 import Data.Primitive.ByteArray.Unaligned qualified as Unaligned
+import GHC.Exts qualified as Exts
 import Seraph.Internal.Util
-import qualified Control.Monad.ST.Unsafe as ST.Unsafe
-import Data.Kind (Type)
 
 -- | This represents deserialization actions.
 -- Unlike 'Put', this type implements 'Monad'.
 newtype Get :: Type -> Type where
-  Get# :: {runGet# :: GE -> Int -> IO (GR a)} -> Get a
+  Get## :: {runGet# :: GE -> Int -> IO (GR a)} -> Get a
+
+pattern Get# :: (GE -> Int -> IO (GR a)) -> Get a
+pattern Get# f <- Get## f
+  where
+    Get# f = Get## $ Exts.oneShot \ge -> Exts.oneShot \i -> f ge i
+
+{-# COMPLETE Get# #-}
 
 data GR a = GR !Int !a
 

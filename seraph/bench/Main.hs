@@ -7,6 +7,7 @@ import Control.DeepSeq
 import Criterion.Main
 import Data.ByteString (ByteString)
 import Data.HashMap.Strict qualified as HashMap
+import Data.Sequence qualified as Seq
 import Data.Store qualified as S
 import Flat qualified as F
 import Minecraft
@@ -26,7 +27,8 @@ main = do
           ++ benchs ("Players", players)
           ++ benchs directionTree
           ++ concatMap (\m -> benchs ("List " ++ show m, replicate m (0 :: Int))) mag
-          ++ benchs ("HashMap", hashMap)
+          ++ concatMap (\m -> benchs ("Seq " ++ show m, Seq.replicate m (0 :: Int))) mag
+          ++ concatMap (\m -> benchs ("HashMap " ++ show m, HashMap.fromList $ (\i -> (i, i)) <$> [1 :: Int .. m])) mag
   defaultMain tests
 
 type C a =

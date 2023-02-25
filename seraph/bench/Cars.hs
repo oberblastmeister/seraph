@@ -45,7 +45,7 @@ data Car = Car
   deriving (Show, Eq, Generic, NFData, Serialize, S.Store, F.Flat)
   deriving Arbitrary via GenericArbitrarySingle Car
 
-seraphEncode :: Car -> Put
+seraphEncode :: [Car] -> Put
 seraphEncode = put
 
 seraphDecode :: Get Car
@@ -54,5 +54,5 @@ seraphDecode = get
 storeDecode :: S.Peek Car
 storeDecode = S.peek
 
-storeEncode :: Car -> S.Poke ()
+storeEncode :: [Car] -> S.Poke ()
 storeEncode = S.poke

@@ -45,15 +45,12 @@ import Data.Sequence qualified as Seq
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text (Text)
-import Data.Text qualified as T
 import Data.Text.Array qualified
 import Data.Text.Encoding qualified as Text.Encoding
 import Data.Text.Internal qualified
 import Data.Tree (Tree)
 import Data.Vector qualified as VB
 import Data.Vector.Mutable qualified as VBM
-import Data.Vector.Primitive qualified as VP
-import Data.Vector.Primitive.Mutable qualified as VPM
 import Data.Word (Word16, Word32, Word64, Word8)
 import Data.Word qualified as Word
 import Foreign qualified
@@ -69,9 +66,10 @@ import Seraph.Internal.Put
 import Seraph.Internal.Util
 import System.ByteOrder qualified as ByteOrder
 import System.IO.Unsafe qualified as IO.Unsafe
-import Unsafe.Coerce qualified
 
--- | The default endianness that the library uses. This is usually little endian.
+-- | The default endianness that the library uses.
+-- By default, this is equal to 'ByteOrder.LittleEndian',
+-- but becomes 'ByteOrder.BigEndian' when the @big-endian@ cabal build flag is set
 #ifdef BIG_ENDIAN
 type DefaultEndian = ByteOrder.BigEndian
 #else
@@ -437,21 +435,16 @@ instance Serialize a => Serialize [a] where
   put = putFoldable
   get = Foldable.foldr' (:) [] <$!> get @(Primitive.Array a)
 
-instance {-# OVERLAPPING #-} Serialize String where
-  size = size . T.pack
-  put = put . T.pack
-  get = T.unpack <$!> get
-
 instance Serialize a => Serialize (NonEmpty a)
 
 instance Serialize a => Serialize (Seq a) where
   size = sizeFoldable
-  put s = putFoldableWith (Seq.length s) (Foldable.toList s)
+  put = putFoldable
   get = foldGet (flip (Seq.|>)) Seq.empty
 
 instance Serialize IntSet where
   size = sizeFoldableWith IntSet.size IntSet.foldl'
-  put is = putFoldableWith (IntSet.size is) (IntSet.toList is)
+  put = putFoldableWith IntSet.size IntSet.foldr
   get = foldGet IntSet.insert IntSet.empty
 
 instance Serialize a => Serialize (IntMap a) where
@@ -459,7 +452,7 @@ instance Serialize a => Serialize (IntMap a) where
     size @Int + case isConstSize @a of
       STrue -> (size @Int + size @a) * IntMap.size xs
       SFalse -> getSum $ Foldable.foldMap' (\x -> Sum (size @Int + size x)) xs
-  put im = putFoldableWith (IntMap.size im) (IntMap.toList im)
+  put = putIxFoldableWith IntMap.size IntMap.foldrWithKey
   get = foldGet2 IntMap.insert IntMap.empty
 
 instance (Ord a, Serialize a) => Serialize (Set a) where
@@ -472,7 +465,7 @@ instance (Ord a, Serialize a, Serialize b) => Serialize (Map a b) where
     size @Int + case (isConstSize @a, isConstSize @b) of
       (STrue, STrue) -> (size @a + size @b) * Map.size m
       (_, _) -> Map.foldlWithKey' (\s k x -> s + theSize @a k + theSize @b x) 0 m
-  put m = putFoldableWith (Map.size m) (Map.toList m)
+  put = putIxFoldableWith Map.size Map.foldrWithKey
   get = foldGet2 Map.insert Map.empty
 
 instance (Hashable a, Serialize a, Serialize b) => Serialize (HashMap a b) where
@@ -480,9 +473,7 @@ instance (Hashable a, Serialize a, Serialize b) => Serialize (HashMap a b) where
     size @Int + case (isConstSize @a, isConstSize @b) of
       (STrue, STrue) -> (size @a + size @b) * HashMap.size m
       (_, _) -> HashMap.foldlWithKey' (\s k x -> s + theSize @a k + theSize @b x) 0 m
-
-  -- put m = put @Int (HashMap.size m) <> HashMap.foldMapWithKey (\k x -> put k <> put x) m
-  put m = putFoldableWith (HashMap.size m) (HashMap.toList m)
+  put = putIxFoldableWith HashMap.size HashMap.foldrWithKey
   get = foldGet2 HashMap.Internal.unsafeInsert HashMap.empty
 
 instance Serialize a => Serialize (VB.Vector a) where
@@ -574,18 +565,20 @@ getSize = get
 
 type FoldM s a = forall m b. (Monad m) => (b -> a -> m b) -> b -> s -> m b
 
-putFoldableWith' :: (Serialize a) => Int -> FoldM s a -> s -> Put
-putFoldableWith' len foldM xs =
-  put len <> Put# \marr i ->
-    foldM (\i x -> runPut# (put x) marr i) i xs
-{-# INLINE putFoldableWith' #-}
+type Foldr s a = forall b. (a -> b -> b) -> b -> s -> b
 
-putFoldableWith :: (Serialize a, Foldable f) => Int -> f a -> Put
-putFoldableWith i = putFoldableWith' i Foldable.foldlM
+type Ifoldr s i a = forall b. (i -> a -> b -> b) -> b -> s -> b
+
+putIxFoldableWith :: (Serialize i, Serialize a) => (s -> Int) -> Ifoldr s i a -> s -> Put
+putIxFoldableWith len ifoldr = \xs -> put (len xs) <> ifoldr (\i x m -> put i <> put x <> m) mempty xs
+{-# INLINE putIxFoldableWith #-}
+
+putFoldableWith :: (Serialize a) => (s -> Int) -> Foldr s a -> s -> Put
+putFoldableWith len foldr = \xs -> put (len xs) <> foldr (\x m -> put x <> m) mempty xs
 {-# INLINE putFoldableWith #-}
 
 putFoldable :: (Serialize a, Foldable f) => f a -> Put
-putFoldable xs = putFoldableWith (length xs) xs
+putFoldable = putFoldableWith length foldr
 {-# INLINE putFoldable #-}
 
 putBifoldable :: (Serialize a, Serialize b, Bifoldable f, Foldable (f a)) => f a b -> Put
