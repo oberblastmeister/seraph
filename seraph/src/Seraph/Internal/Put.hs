@@ -17,9 +17,6 @@ import GHC.Exts (RealWorld)
 import GHC.Exts qualified as Exts
 import Seraph.Internal.Util
 
--- Note: Because everything is unboxed there are a lot more arguments to the function
--- This makes recursive calls more expensive
-
 -- | This represents serialization actions.
 -- This is essentally a bytestring builder.
 -- Unlike 'Get', it only implements 'Monoid', but not 'Monad'.
@@ -31,7 +28,6 @@ pattern Put# :: (Primitive.MutableByteArray RealWorld -> Int -> IO Int) -> Put
 pattern Put# f <- Put## f
   where
     Put# f = Put## $ Exts.oneShot \marr -> Exts.oneShot \i -> f marr i
-{-# INLINE Put# #-}
 
 {-# COMPLETE Put# #-}
 
@@ -48,30 +44,6 @@ data PutException
   deriving (Show, Eq, Ord)
 
 instance Exception PutException
-
--- throwPut :: Exception e => e -> Put
--- throwPut :: Except
--- throwPut e = Put# \_ ps# s# -> case runIO# (Exception.throwIO e) s# of
---   (# s#, _ #) -> PR# s# ps#
--- {-# NOINLINE throwPut #-}
-
--- Even more unsafe!
--- Used because ByteString stuff uses IO instead of ST
--- Just don't shoot the missiles in here!
--- unsafeWithPutIO :: Int -> (Primitive.MutableByteArray RealWorld -> Int -> IO Int) -> Put
--- unsafeWithPutIO = Put#
--- unsafeWithPutIO (I# o#) f = Put# \(PE# marr#) ps@(PS# i#) s# ->
---   case runIO# (f (Primitive.MutableByteArray marr#) (I# i#)) s# of
---     (# s#, () #) -> PR# s# (incPS# o# ps)
--- unsafeWithPutIO (I# o#) f = Put# \(PE# marr#) ps@(PS# i#) s# ->
---   case getSizeofMutableByteArray# marr# s# of
---     (# s#, l# #) -> case i# +# o# ># l# of
---       1# -> case runIO# (Exception.throwIO $ IndexOutOfBounds (I# (i# +# o#)) (I# l#)) s# of
---         (# s#, _ #) -> PR# s# ps
---       _ ->
---         case runIO# (f (Primitive.MutableByteArray marr#) (I# i#)) s# of
---         (# s#, () #) -> PR# s# (incPS# o# ps)
--- {-# INLINE unsafeWithPutIO #-}
 
 throwST :: Exception e => e -> ST s a
 throwST = ST.Unsafe.unsafeIOToST . Exception.throwIO
