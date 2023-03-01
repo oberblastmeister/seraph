@@ -73,7 +73,7 @@ import GHC.ForeignPtr (unsafeWithForeignPtr)
 #endif
 
 #if !MIN_VERSION_base(4,15,0)
-unsafeWithForeignPtr :: ForeignPtr a -> (Ptr a -> IO b) -> IO b
+unsafeWithForeignPtr :: Foreign.ForeignPtr a -> (Foreign.Ptr a -> IO b) -> IO b
 unsafeWithForeignPtr = Foreign.withForeignPtr
 #endif
 
