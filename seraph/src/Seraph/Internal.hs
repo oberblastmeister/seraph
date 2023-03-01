@@ -67,6 +67,16 @@ import Seraph.Internal.Util
 import System.ByteOrder qualified as ByteOrder
 import System.IO.Unsafe qualified as IO.Unsafe
 
+-- from bytestring
+#if MIN_VERSION_base(4,15,0)
+import GHC.ForeignPtr (unsafeWithForeignPtr)
+#endif
+
+#if !MIN_VERSION_base(4,15,0)
+unsafeWithForeignPtr :: ForeignPtr a -> (Ptr a -> IO b) -> IO b
+unsafeWithForeignPtr = Foreign.withForeignPtr
+#endif
+
 -- | The default endianness that the library uses.
 -- By default, this is equal to 'ByteOrder.LittleEndian',
 -- but becomes 'ByteOrder.BigEndian' when the @big-endian@ cabal build flag is set
@@ -519,7 +529,8 @@ instance Serialize ByteString where
   {-# INLINE size #-}
   put (B.Internal.PS fp off len) =
     putSize len <> unsafeWithSizedPutIO len \marr i ->
-      Foreign.withForeignPtr fp \p -> do
+      -- safe to use because copyPtrToMutableByteArray can't diverge
+      unsafeWithForeignPtr fp \p -> do
         let p' :: Primitive.Ptr Word8 = p `Foreign.plusPtr` off
         Primitive.copyPtrToMutableByteArray marr i p' len
   get = do
