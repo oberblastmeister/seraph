@@ -31,7 +31,13 @@ pattern Put# :: (Primitive.MutableByteArray RealWorld -> Int -> IO Int) -> Put
 pattern Put# f <- Put## f
   where
     Put# f = Put## $ Exts.oneShot \marr -> Exts.oneShot \i -> f marr i
+
+#if MIN_VERSION_base(4,16,1)
+-- inline pragma on pattern synonyms only available from GHC 9.2.1
+-- https://gitlab.haskell.org/ghc/ghc/-/issues/12178
 {-# INLINE Put# #-}
+#else
+#endif
 
 {-# COMPLETE Put# #-}
 
