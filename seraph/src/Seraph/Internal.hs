@@ -476,14 +476,14 @@ instance (Ord a, Serialize a, Serialize b) => Serialize (Map a b) where
       (STrue, STrue) -> (size @a + size @b) * Map.size m
       (_, _) -> Map.foldlWithKey' (\s k x -> s + theSize @a k + theSize @b x) 0 m
   put = putIxFoldableWith Map.size Map.foldrWithKey
-  get = foldGet2 Map.insert Map.empty
+  get = Map.fromList <$!> get
 
 instance (Hashable a, Serialize a, Serialize b) => Serialize (HashMap a b) where
   size m =
     size @Int + case (isConstSize @a, isConstSize @b) of
       (STrue, STrue) -> (size @a + size @b) * HashMap.size m
       (_, _) -> HashMap.foldlWithKey' (\s k x -> s + theSize @a k + theSize @b x) 0 m
-  put = putIxFoldableWith HashMap.size HashMap.foldrWithKey
+  put = put . HashMap.toList
   get = foldGet2 HashMap.Internal.unsafeInsert HashMap.empty
 
 instance Serialize a => Serialize (VB.Vector a) where

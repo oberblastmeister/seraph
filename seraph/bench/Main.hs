@@ -7,6 +7,7 @@ import Control.DeepSeq
 import Criterion.Main
 import Data.ByteString (ByteString)
 import Data.HashMap.Strict qualified as HashMap
+import Data.Map qualified as Map
 import Data.Sequence qualified as Seq
 import Data.Store qualified as S
 import Flat qualified as F
@@ -20,7 +21,6 @@ main = do
   let directionTree = ("BinTree Direction", tree)
   players <- sample' $ resize 100 $ arbitrary @[Player]
   cars <- sample' $ resize 500 $ arbitrary @[Car]
-  let hashMap = HashMap.fromList $ (\i -> (i, i)) <$> [1 :: Int .. 300]
   let mag = (10 ^) <$> [2 :: Int .. 4]
   let tests =
         benchs ("Cars", cars)
@@ -28,6 +28,7 @@ main = do
           ++ benchs directionTree
           ++ concatMap (\m -> benchs ("List " ++ show m, replicate m (0 :: Int))) mag
           ++ concatMap (\m -> benchs ("Seq " ++ show m, Seq.replicate m (0 :: Int))) mag
+          ++ concatMap (\m -> benchs ("Map " ++ show m, Map.fromList $ (\i -> (i, i)) <$> [1 :: Int .. m])) mag
           ++ concatMap (\m -> benchs ("HashMap " ++ show m, HashMap.fromList $ (\i -> (i, i)) <$> [1 :: Int .. m])) mag
   defaultMain tests
 
