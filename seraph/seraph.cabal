@@ -63,6 +63,7 @@ common common-options
     MagicHash,
     UnboxedTuples,
     UnboxedSums,
+    RoleAnnotations,
   ghc-options:
     -Wall
     -Wredundant-constraints

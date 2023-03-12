@@ -2,6 +2,11 @@
 
 module Seraph.Internal.Util
   (
+    PureMode,
+    STMode,
+    IOMode,
+    ZeroBitType,
+    ZeroBitRep,
     unpackByteString,
     pinnedToByteString,
     sizeOf',
@@ -19,14 +24,20 @@ import Data.Primitive (Prim)
 import Data.Primitive qualified as Primitive
 import Foreign qualified
 import GHC.ForeignPtr (ForeignPtr (..), ForeignPtrContents (PlainPtr))
-import GHC.IO qualified
 import System.IO.Unsafe (unsafeDupablePerformIO)
 import Data.Coerce
-import GHC.Exts (unsafeCoerce#)
-import GHC.ST qualified
-import Control.Monad.ST (ST)
+import GHC.Exts (unsafeCoerce#, State#, TYPE, RuntimeRep (..))
 import Control.Exception (Exception)
 import qualified Control.Exception as Exception
+import Control.Monad.Primitive (RealWorld)
+
+type PureMode = (# #)
+type IOMode = STMode RealWorld
+type STMode = State#
+
+type ZeroBitType = TYPE ZeroBitRep
+
+type ZeroBitRep = 'TupleRep ('[] :: [RuntimeRep])
 
 sizeOf' :: forall a. Prim a => Int
 sizeOf' = Primitive.sizeOf (undefined :: a)

@@ -17,12 +17,16 @@ import GHC.Exts (RealWorld)
 import GHC.Exts qualified as Exts
 import Seraph.Internal.Util
 
+type role PutT nominal
+
 -- | This represents serialization actions.
 -- This is essentally a bytestring builder.
 -- Unlike 'Get', it only implements 'Monoid', but not 'Monad'.
 -- Chain 'Put' actions using '<>' instead of '>>='.
-newtype Put :: Type where
-  Put## :: {runPut# :: Primitive.MutableByteArray RealWorld -> Int -> IO Int} -> Put
+newtype PutT :: ZeroBitType -> Type where
+  Put## :: {runPut# :: Primitive.MutableByteArray RealWorld -> Int -> IO Int} -> PutT m
+
+type Put = PutT PureMode
 
 pattern Put# :: (Primitive.MutableByteArray RealWorld -> Int -> IO Int) -> Put
 pattern Put# f <- Put## f

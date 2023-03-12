@@ -1,6 +1,7 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
 {-# HLINT ignore "Avoid lambda" #-}
+{-# LANGUAGE RoleAnnotations #-}
 module Seraph.Internal.Get where
 
 import Control.Exception (Exception)
@@ -15,10 +16,13 @@ import Data.Primitive.ByteArray.Unaligned qualified as Unaligned
 import GHC.Exts qualified as Exts
 import Seraph.Internal.Util
 
+type role GetT nominal representational
 -- | This represents deserialization actions.
 -- Unlike 'Put', this type implements 'Monad'.
-newtype Get :: Type -> Type where
-  Get## :: {runGet# :: GE -> Int -> IO (GR a)} -> Get a
+newtype GetT :: ZeroBitType -> Type -> Type where
+  Get## :: {runGet# :: GE -> Int -> IO (GR a)} -> GetT m a
+
+type Get = GetT PureMode
 
 pattern Get# :: (GE -> Int -> IO (GR a)) -> Get a
 pattern Get# f <- Get## f

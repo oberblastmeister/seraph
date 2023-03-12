@@ -627,35 +627,60 @@ foldGet2 f z = do
   Foldable.foldlM (\xs _ -> do x <- get; y <- get; pure $! f x y xs) z [1 .. size]
 {-# INLINE foldGet2 #-}
 
+runPutIO :: Int -> PutT m -> IO ByteString
+runPutIO sz p = do
+  marr <- Primitive.newPinnedByteArray sz
+  Monad.void $ runPut# p marr 0
+  pinnedToByteString 0 sz <$!> Primitive.unsafeFreezeByteArray marr
+
+runPutPure :: Int -> Put -> ByteString
+runPutPure sz p = IO.Unsafe.unsafeDupablePerformIO $ runPutIO sz p
+
+runPutST :: (forall s. PutT (STMode s)) -> Put
+runPutST (Put## p) = (Put## p)
+{-# INLINE runPutST #-}
+
+runGetST :: (forall s. GetT (STMode s) a) -> Get a
+runGetST (Get## g) = (Get## g)
+{-# INLINE runGetST #-}
+
+liftPut :: PutT PureMode -> PutT (STMode s)
+liftPut (Put## p) = Put## p
+{-# INLINE liftPut #-}
+
+liftGet :: GetT PureMode a -> GetT (STMode s) a
+liftGet (Get## g) = Get## g
+{-# INLINE liftGet #-}
+runGetIO :: ByteString -> Get a -> IO a
+runGetIO bs g = do
+  GR _ x <- runGet# g (GE arr l) i
+  pure x
+  where
+    !(arr, i, l) = unpackByteString bs
+
+runGetPure :: ByteString -> Get a -> Either GetException a
+runGetPure bs = IO.Unsafe.unsafeDupablePerformIO . Exception.try . runGetIO bs
+
 -- | Same as 'encode' but inside the 'IO' monad.
 -- This is useful to throw exceptions on evaluation of the 'IO' action instead of evaluation of the inner value.
 -- See 'evaluate' for more info.
 encodeIO :: Serialize a => a -> IO ByteString
-encodeIO x = do
-  marr <- Primitive.newPinnedByteArray sz
-  Monad.void $ runPut# (put x) marr 0
-  pinnedToByteString 0 sz <$!> Primitive.unsafeFreezeByteArray marr
-  where
-    sz = theSize x
+encodeIO x = runPutIO (theSize x) (put x)
 
 -- | Encode a value into a 'ByteString'.
 encode :: Serialize a => a -> ByteString
-encode = IO.Unsafe.unsafeDupablePerformIO . encodeIO
+encode x = runPutPure (theSize x) (put x)
 
 -- | Same as 'decode'' but in the 'IO' monad.
 -- This is useful to throw exceptions on evaluation of the 'IO' action instead of evaluation of the inner value.
 -- See 'evaluate' for more info.
 decodeIO :: Serialize a => ByteString -> IO a
-decodeIO bs = do
-  GR _ x <- runGet# get (GE arr l) i
-  pure x
-  where
-    !(arr, i, l) = unpackByteString bs
+decodeIO bs = runGetIO bs get
 
 -- | Decode a value from a 'ByteString'.
 -- If the 'ByteString' is invalid, this will return 'Left' with some 'GetException'.
 decode :: Serialize a => ByteString -> Either GetException a
-decode = IO.Unsafe.unsafeDupablePerformIO . Exception.try . decodeIO
+decode bs = runGetPure bs get
 
 -- | Same as 'decode', but will throw an exception if the 'Either' is 'Left'
 decode' :: Serialize a => ByteString -> a
