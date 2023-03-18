@@ -1,3 +1,1 @@
-ignore-project: False
-test-options: "--color"
-test-show-details: streaming
+test-show-details: direct

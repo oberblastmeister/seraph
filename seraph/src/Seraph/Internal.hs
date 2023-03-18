@@ -23,7 +23,7 @@ import Data.ByteString.Short qualified as SBS
 import Data.Char qualified as Char
 import Data.Coerce (coerce)
 import Data.Foldable qualified as Foldable
-import Data.Functor ((<&>))
+import Data.Functor (($>), (<&>))
 import Data.HashMap.Internal qualified as HashMap.Internal
 import Data.HashMap.Strict (HashMap)
 import Data.HashMap.Strict qualified as HashMap
@@ -70,6 +70,7 @@ import System.IO.Unsafe qualified as IO.Unsafe
 -- from bytestring
 #if MIN_VERSION_base(4,15,0)
 import GHC.ForeignPtr (unsafeWithForeignPtr)
+import Control.Monad.ST.Unsafe (unsafeSTToIO)
 #endif
 
 #if !MIN_VERSION_base(4,15,0)
@@ -627,12 +628,6 @@ foldGet2 f z = do
   Foldable.foldlM (\xs _ -> do x <- get; y <- get; pure $! f x y xs) z [1 .. size]
 {-# INLINE foldGet2 #-}
 
-runPutIO :: Int -> PutT m -> IO ByteString
-runPutIO sz p = do
-  marr <- Primitive.newPinnedByteArray sz
-  Monad.void $ runPut# p marr 0
-  pinnedToByteString 0 sz <$!> Primitive.unsafeFreezeByteArray marr
-
 runPutPure :: Int -> Put -> ByteString
 runPutPure sz p = IO.Unsafe.unsafeDupablePerformIO $ runPutIO sz p
 
@@ -651,6 +646,21 @@ liftPut (Put## p) = Put## p
 liftGet :: GetT PureMode a -> GetT (STMode s) a
 liftGet (Get## g) = Get## g
 {-# INLINE liftGet #-}
+
+liftIO :: IO () -> PutT IOMode
+liftIO m = Put## $ \_ i -> m $> i
+{-# INLINE liftIO #-}
+
+liftST :: ST s () -> PutT (STMode s)
+liftST m = Put## $ \_ i -> unsafeSTToIO m $> i
+{-# INLINE liftST #-}
+
+runPutIO :: Int -> PutT m -> IO ByteString
+runPutIO sz p = do
+  marr <- Primitive.newPinnedByteArray sz
+  Monad.void $ runPut# p marr 0
+  pinnedToByteString 0 sz <$!> Primitive.unsafeFreezeByteArray marr
+
 runGetIO :: ByteString -> Get a -> IO a
 runGetIO bs g = do
   GR _ x <- runGet# g (GE arr l) i
